@@ -1,0 +1,2 @@
+recursive-include opensmell/data *
+recursive-include opensmell/weights *
