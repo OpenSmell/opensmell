@@ -4,13 +4,13 @@
 
 ---
 
-This document describes the OpenSmell project: what problem it addresses, what has been built, what has been tested, what has failed, and what remains to be done. It is written for engineers, researchers, and potential contributors who need a precise understanding of the current state without marketing language or philosophical preamble.
+This document describes the OpenSmell project: what problem it addresses, what has been built, what has been tested, what has failed, and what remains to be done.
 
 ---
 
-## 1. The Problem
+Humans have externalised sight and sound into reproducible systems. The chemical sense has not been externalised—not because hardware is absent, but because electronic noses share no common language.
 
-Electronic noses exist. They are sold commercially. They are used in research laboratories. They do not interoperate.
+## 1. The Problem
 
 An e-nose sensor outputs raw physical measurements—typically resistance values from metal-oxide semiconductor (MOX) elements, or voltage changes from a divider circuit, or analog-to-digital converter counts. These raw values vary with:
 
@@ -29,7 +29,15 @@ This fragmentation prevents:
 - Building an application ecosystem where any app works with any hardware
 - Creating a cumulative, community-owned dataset that improves over time
 
-The hardware exists. The software is blocked by the absence of a standard representation.
+### 1.1 Why Not Perceptual Labels
+
+An earlier approach trained a graph neural network (GNN) to predict human odor descriptors—categories like "floral," "musky," and "citrus"—directly from molecular structure using the Pyrfume dataset. The model overfit and failed to generalise to novel molecules.
+
+Human odor descriptors are subjective and inconsistently applied across raters and contexts. The same molecule can be described differently by different people, or by the same person at different times. Training a model on these labels is analogous to training a weather model on opinions about whether it "feels cold." The target is too noisy.
+
+Perception itself is not absolute for any sense. Brightness and loudness are perceived logarithmically, not linearly; colour categories shift with language and culture. This does not prevent us from building cameras and microphones that measure physical quantities—wavelength, intensity, frequency, amplitude—and leaving perceptual interpretation to application-layer software.
+
+The same factoring applies here. The Chemoprint encodes measurable molecular properties. Perceptual labels, taxonomies, and classifiers can be built as heads on top of the latent space. Any representation—ECFP4, MACCS, a learned embedding, a custom taxonomy—can be plugged in. The latent space is the shared foundation. What sits above it is limited only by what developers choose to build.
 
 ---
 
@@ -80,6 +88,8 @@ Using the UCI Gas Sensor Array Drift Dataset (16 sensors, 6 pure gases, 36 month
 On a held-out test set (20% of samples): **R² (variance-weighted) = 0.982.** All 29 dimensions achieved R² > 0.97.
 
 A commercial sensor array can be calibrated to output a fixed, interpretable chemical vector for pure compounds with near-perfect accuracy. The Chemoprint is measurable, not merely theoretical.
+
+**Caveat.** The UCI dataset contains only six chemically distinct gases measured on a single sensor configuration over 36 months. A high R² on this dataset demonstrates measurability, not universal applicability. Generalisation to structurally diverse mixtures, different sensor types, or real-world conditions requires broader validation.
 
 ### 3.3 Benchmark Against Industry Fingerprints
 
@@ -206,7 +216,9 @@ The encoder makes no theoretical commitments about olfaction. If vibrational the
 
 **Layer 2: Heads (swappable, versioned)**
 
-Heads are small models trained on the frozen latent space to predict specific outputs. The Chemoprint head v1.0 predicts 29 structural dimensions. Future versions add dimensions:
+Heads are small models trained on the frozen latent space to predict specific outputs. Any representation can serve as a head—the Chemoprint, ECFP4, MACCS, a learned embedding, a perceptual taxonomy, a food spoilage classifier, or a breath analysis model. The latent space is the shared foundation; what sits above it is limited only by what developers choose to build.
+
+The Chemoprint head v1.0 predicts 29 structural dimensions. Future versions add dimensions:
 
 | Version | Dimensions | Additions |
 |---------|-----------|-----------|
@@ -249,6 +261,8 @@ if result.confidence < 0.7:
 
 The SDK requires no calibration, no downloads, and no hardware-specific configuration for substances in the training set. Confidence below 0.7 triggers an automatic suggestion to contribute data to the community dataset.
 
+The SDK is a research preview. It has not been tested outside the SmellNet training distribution.
+
 ---
 
 ## 8. The Data Commons
@@ -267,6 +281,8 @@ An upload notebook validates submissions and pushes them to `opensmell/community
 from datasets import load_dataset
 data = load_dataset("opensmell/community", split="train")
 ```
+
+The pipeline is a placeholder. If you want to contribute data, join the Discord or open an issue—we’ll get it working together.
 
 ---
 
