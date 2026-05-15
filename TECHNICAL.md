@@ -310,7 +310,7 @@ All repositories are MIT-licensed. All experiments are reproducible on a standar
 
 **Federated learning.** A global model can be improved without centralizing raw sensor data. Each participant downloads the model, trains locally on their own recordings, and sends back only model updates (gradients). The server aggregates updates. No raw data leaves the participant's device. The federated learning server is planned but not yet implemented.
 
-**Reference hardware.** A $50 open-source e-nose design (ESP32 + 4–6 MOX sensors) is needed as a reference implementation and an entry point for contributors who do not own commercial hardware. Bill of materials, PCB files, and firmware are planned but not yet released.
+**Reference hardware.** An open-source e-nose design (ESP32 + 4–6 MOX sensors) is needed as a reference implementation and an entry point for contributors who do not own commercial hardware. Bill of materials, PCB files, and firmware are planned but not yet released.
 
 **Calibration kit.** A set of 10–20 shelf-stable household odorants in sealed vials, sufficient to align a new device to the global model. Specification is planned.
 
