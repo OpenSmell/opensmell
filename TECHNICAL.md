@@ -75,9 +75,9 @@ The Chemoprint is a 29-dimensional vector of physicochemical properties computab
 
 | Indices | Category | Properties |
 |---------|----------|------------|
-| 0–11 | Base properties | Molecular weight, LogP, hydrogen bond donors, hydrogen bond acceptors, rotatable bonds, ring count, aromatic ring count, aliphatic ring count, fraction Csp³, topological polar surface area, valence electrons, heavy atom count |
-| 12–14 | Topological indices | Chi0, Chi1, Kappa1 (measures of molecular branching and shape) |
-| 15–28 | Functional group indicators | 14 binary flags: alcohol, aldehyde, ketone, carboxylic acid, amine, ester, ether, nitrile, amide, nitro, thiol, sulfide, aromatic ring, alkene |
+| 0–11 | Base properties | Molecular weight, heavy atom count, rotatable bonds, ring count, aromatic ring count, fraction Csp³, LogP, topological polar surface area, H-bond donors, H-bond acceptors, net charge, heteroatom count |
+| 12–14 | Topological indices | Wiener index, Zagreb index (M1), eccentricity (graph diameter) — measures of molecular branching and shape |
+| 15–28 | Functional group indicators | 14 binary flags: alcohol, aldehyde, ketone, carboxylic acid, ester, ether, primary amine, secondary amine, tertiary amine, nitro, thiol, sulfide, aromatic nitrogen, halogen |
 
 Every dimension has a name and a physical interpretation. The vector is deterministic—the same SMILES always produces the same Chemoprint.
 
@@ -178,14 +178,14 @@ Six substances were absent from FooDB (chamomile, chestnuts, peanuts, pecans, pi
 The encoder was trained on 1,642 segments from 250 SmellNet training recordings, validated on 205 segments, and tested on 926 segments from held-out measurement sessions—entire recording days the model never saw.
 
 **Held-out sessions of known substances:**
-- Mean Chemoprint R² = **0.892** across all 29 dimensions
-- Median R² = 0.924
+- Mean Chemoprint R² = **0.882** across all 29 dimensions
+- Median R² = 0.946
 - Success criterion (R² > 0.7): **met**
 
 The encoder predicts molecular properties from raw sensor data with high fidelity when the substance was present in the training set, on measurement days it has never seen. No calibration is required. The latent space is session-invariant.
 
 **Held-out substances (leave-11-substances-out cross-validation):**
-- Mean Chemoprint R² = **-7.79**
+- Mean Chemoprint R² = **-14.62**
 - Success criterion (R² > 0.7): **not met**
 
 The encoder does not generalize to substances it has never seen during training. Forty-four foods with six broad-spectrum MOX sensors is insufficient to learn the full mapping from sensor space to molecular property space. The encoder functions as a substance identification system with session invariance; it is not a universal chemistry predictor.
@@ -193,12 +193,12 @@ The encoder does not generalize to substances it has never seen during training.
 | Claim | Pre-registered threshold | Actual result | Status |
 |-------|--------------------------|---------------|--------|
 | Session-invariance (classification) | Accuracy > 70% | 81.78% | Confirmed |
-| Session-invariance (chemoprint) | R² > 0.7 | 0.892 | Confirmed |
-| Substance generalization | R² > 0.7 | -7.79 | Not confirmed |
+| Session-invariance (chemoprint) | R² > 0.7 | 0.882 | Confirmed |
+| Substance generalization | R² > 0.7 | -14.62 | Not confirmed |
 
 ### 5.4 Weak Dimensions
 
-Chemoprint dimensions 16 and 17 (functional group indicators, likely aldehyde and ketone) achieved R² values of 0.43 and 0.80 respectively—substantially lower than the other 27 dimensions. These are binary flags for structural features that appear rarely in the training set. Six broad-spectrum MOX sensors lack the resolution to distinguish closely related functional groups at the concentrations present in complex food mixtures.
+Chemoprint dimensions 16, 24, and 25 (functional group indicators for secondary amine, halogen, and nitro) achieved R² values of 0.44, 0.00, and 0.91 respectively—substantially lower than the other dimensions. Some binary flags appear rarely or never in the training set (dim 24 — halogen — R²=0.0). Six broad-spectrum MOX sensors lack the resolution to distinguish closely related functional groups at the concentrations present in complex food mixtures.
 
 The encoder predicts continuous properties (molecular weight, LogP) more accurately than discrete structural features. This is consistent with the physics: MOX sensors respond continuously to VOC concentration, not selectively to specific functional groups. Higher-resolution sensors or larger training sets would be required to improve these dimensions.
 

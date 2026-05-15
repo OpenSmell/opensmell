@@ -13,7 +13,7 @@ print(result.chemoprint)   # 29-dim array
 
 ## Status
 
-**v1.0 — What it does:** Maps 6-sensor e-nose data to a 256-dim latent space and a 29-dim chemoprint. Trained on 44 food substances from SmellNet. Session-invariant (same food, different days → same output). Proven R² = 0.892 on held-out sessions of known substances.
+**v1.0 — What it does:** Maps 6-sensor e-nose data to a 256-dim latent space and a 29-dim chemoprint. Trained on 44 food substances from SmellNet. Session-invariant (same food, different days → same output). Proven R² = 0.882 on held-out sessions of known substances.
 
 **What it does NOT do:**
 - **Novel substances.** The encoder cannot generalise to foods it hasn't seen. Leave-substance-out validation gives negative R². It identifies substances it trained on, not unknown ones.
@@ -21,7 +21,7 @@ print(result.chemoprint)   # 29-dim array
 - **Environmental or industrial samples.** Trained on 44 foods only.
 - **Functional group granularity.** The 29 chemoprint dimensions are limited to basic structural properties. Rare functional groups (present in <20% of foods) have poor reconstruction (dim 16 R² = 0.43).
 
-**Independent reproduction:** Clone the universal-encoder repo. Run `src/train_encoder.py`. Our reported R² = 0.892 should reproduce within ±0.05. If not, file an issue.
+**Independent reproduction:** Clone the universal-encoder repo. Run `src/train_encoder.py`. Our reported R² = 0.882 should reproduce within ±0.05. If not, file an issue.
 
 ## Quick start
 
