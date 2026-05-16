@@ -312,8 +312,6 @@ All repositories are MIT-licensed. All experiments are reproducible on a standar
 
 **Reference hardware.** An open-source e-nose design (ESP32 + 4–6 MOX sensors) is needed as a reference implementation and an entry point for contributors who do not own commercial hardware. Bill of materials, PCB files, and firmware are planned but not yet released.
 
-**Calibration kit.** A set of 10–20 shelf-stable household odorants in sealed vials, sufficient to align a new device to the global model. Specification is planned.
-
 **Independent reproduction.** All results reported here are self-reported. The code and data are public. Independent reproduction by external researchers is invited and necessary.
 
 ---
