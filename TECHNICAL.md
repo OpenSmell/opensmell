@@ -306,7 +306,25 @@ All repositories are MIT-licensed. All experiments are reproducible on a standar
 
 **Substance generalization.** The current encoder does not generalize to substances absent from the training set. This is a dataset size limitation: 44 foods is insufficient. The Data Commons pipeline is designed to receive contributions that will increase this number. Hundreds of training substances are needed for robust generalization. The architecture supports this—only more data is required.
 
-**Device-invariance.** All training data comes from a single sensor board (SmellNet's FS-12). Cross-device generalization has not been tested. The planned approach: train the encoder on data from multiple hardware configurations simultaneously, with a domain-adversarial loss that penalizes the encoder if device identity can be inferred from the latent representation. This technique is well-established in domain adaptation literature. Multi-device data is the prerequisite.
+**Device-invariance.** All training data comes from a single sensor board (SmellNet's FS-12). Cross-device generalization has not been demonstrated. Two approaches are being explored:
+
+- **Zero-shot (no adapter):** Feed data from a different sensor configuration
+  directly through the encoder and check whether the latent space generalises.
+  Preliminary simulation results (see `electronic-nose/test_zero_shot.py`)
+  indicate this does **not** work — the encoder was trained exclusively on 6-
+  channel SmellNet data and cannot generalise to even a simulated 4-channel
+  configuration without a mapping step.
+
+- **Per-device adapter:** A lightweight MLP trained on paired recordings from
+  two devices. Simulation results (see `electronic-nose/train_adapter.py` and
+  `electronic-nose/test_adapter.py`) are pending. If the adapter works, each
+  new hardware configuration would require a small set of calibration
+  recordings (~5 substances, ~60 seconds each).
+
+- **Domain-adversarial encoder:** Retrain the encoder on multi-device data with
+  a domain-adversarial head that forces device-invariance natively. This
+  requires data from multiple hardware platforms and is the long-term solution.
+  Multi-device data is the prerequisite.
 
 **Federated learning.** A global model can be improved without centralizing raw sensor data. Each participant downloads the model, trains locally on their own recordings, and sends back only model updates (gradients). The server aggregates updates. No raw data leaves the participant's device. The federated learning server is planned but not yet implemented.
 

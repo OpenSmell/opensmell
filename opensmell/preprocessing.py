@@ -2,6 +2,7 @@ import os
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -28,14 +29,20 @@ def detect_sensor_columns(df: pd.DataFrame):
     return cols
 
 
-def load_csv(filepath: str):
+def load_csv(filepath: str, sensor_map: Optional[dict] = None):
     df = pd.read_csv(filepath)
+    if sensor_map is not None:
+        df = df.rename(columns=sensor_map)
     cols = detect_sensor_columns(df)
     if any(c is None for c in cols):
+        missing = [SENSOR_NAMES[i] for i, c in enumerate(cols) if c is None]
         raise ValueError(
             f"Could not detect sensor columns in CSV. "
-            f"Expected one of {SENSOR_NAMES} or sensor_N prefix. "
-            f"Found columns: {list(df.columns)}"
+            f"Missing after mapping: {missing}. "
+            f"Expected one of {SENSOR_NAMES}. "
+            f"Found columns: {list(df.columns)}. "
+            f"If using non-standard sensor names, provide a sensor_map "
+            f"dict mapping your column names to the standard names."
         )
     raw = df[cols].values.astype(np.float32)
     return raw
