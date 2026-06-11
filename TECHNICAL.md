@@ -16,9 +16,9 @@ The v1.0 encoder does not learn chemistry. It does not identify molecules. It le
 
 Every MOX sensor operates on the same physical principle. A heated tin dioxide (SnO₂) surface exchanges electrons with adsorbed oxygen. When a reducing gas (ethanol, CO, most VOCs) arrives, it reacts with the adsorbed oxygen, releasing electrons back into the conduction band and lowering the resistance. The relationship follows the power‑law derived from the mass‑action equilibrium of oxygen adsorption and gas reaction:
 
-\[
+$$
 \frac{R_s}{R_0} = a \cdot C^b
-\]
+$$
 
 where R₀ is the baseline resistance in clean air, C is the gas concentration, *a* is the sensitivity pre‑factor, and *b* is the stoichiometric exponent.
 
@@ -30,9 +30,9 @@ MOX sensors produce a single physical signal: the free electron concentration in
 
 **Paradigm 1 — Amplitude (Δe⁻ magnitude).** The size of the resistance drop is proportional to the concentration of reducing gas. For a mixture, conductance (1/Rs) is approximately additive:
 
-\[
+$$
 \frac{1}{R_s} \approx \frac{1}{R_0} + \sum_i k_i \cdot C_i^{b_i}
-\]
+$$
 
 **Paradigm 2 — Selectivity pattern (Δe⁻ across channels).** Different MQ sensors have different sensitivity constants for different gases. The vector of resistance changes across the array forms a pattern characteristic of the gas mixture. Two substances with similar VOC profiles produce similar patterns.
 
@@ -107,21 +107,21 @@ The encoder was trained on SmellNet's 6‑channel sensor board. Raw voltages fro
 
 Let *E* be the frozen encoder. It maps SmellNet's 6‑dimensional raw voltages **x_S** to a latent vector **z**:
 
-\[
+$$
 \mathbf{z} = E(\mathbf{x}_S)
-\]
+$$
 
 A new device produces 3‑dimensional raw voltages **x_B**. The adapter *A*: ℝ³ → ℝ⁶ is a small MLP trained on paired recordings—the new device and SmellNet measuring the same substances. The loss minimises mean squared error:
 
-\[
+$$
 \mathcal{L}_{\text{adapter}} = \frac{1}{N}\sum_t \| A(\mathbf{x}_B(t)) - \mathbf{x}_S(t) \|^2
-\]
+$$
 
 After training, adapter weights are frozen. The composite pipeline:
 
-\[
+$$
 \mathbf{z} = E(A(\mathbf{x}_B))
-\]
+$$
 
 The Universal Approximation Theorem guarantees that *A* can learn this mapping, provided the mapping is continuous and there is enough training data. The mapping is continuous because the underlying physics—electron‑count changes in SnO₂—is continuous. Both devices measure the same physical phenomenon through different sensor configurations.
 
@@ -131,9 +131,9 @@ A user builds a device, installs the SDK, and runs `opensmell.process()`. The SD
 
 An app developer trains a classifier *C* on the latent space. The user downloads the app, which bundles *C*. The complete pipeline:
 
-\[
+$$
 \text{label} = C(E(A(\mathbf{x}_B)))
-\]
+$$
 
 At no point does the user calibrate anything. At no point is the encoder retrained. The adapter was trained once. The classifier was trained once. The user simply uses the device.
 
