@@ -9,7 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from .encoder import Encoder
 from .heads import ChemoprintHead
 from .preprocessing import export_for_contribution as _export
-from .preprocessing import load_csv, segment_and_normalize
+from .preprocessing import expand_channels, load_csv, per_recording_zscore, segment_and_normalize
 from .result import SmellResult
 
 _ROOT = Path(__file__).resolve().parent
@@ -23,17 +23,24 @@ _prototype_labels: Optional[list] = None
 def _lazy_init():
     global _encoder, _chemoprint_head, _prototypes, _prototype_labels
     if _encoder is None:
-        _encoder = Encoder.load("v1")
+        _encoder = Encoder.load_auto()
         _chemoprint_head = ChemoprintHead.load("v1")
         _prototypes = np.load(str(_ROOT / "data" / "prototypes.npy"))
         with open(str(_ROOT / "data" / "prototype_labels.json")) as f:
             _prototype_labels = json.load(f)
 
 
-def process(filepath: str) -> SmellResult:
+def process(filepath: str, norm: str = "global_z") -> SmellResult:
     _lazy_init()
     raw = load_csv(filepath)
-    segments = segment_and_normalize(raw)
+    if norm == "per_recording_z":
+        from .preprocessing import SENSOR_MEAN as SM, SENSOR_STD as SS
+        from .preprocessing import per_recording_zscore, segment
+        normed = per_recording_zscore(raw)
+        segments = segment(normed)
+        segments = (segments - SM) / SS
+    else:
+        segments = segment_and_normalize(raw)
     latents = _encoder.encode(segments)
     latent = latents.mean(axis=0)
     latent_t = torch.tensor(latent[np.newaxis, :], dtype=torch.float32)
@@ -85,6 +92,9 @@ __all__ = [
     "process",
     "process_array",
     "export_for_contribution",
+    "expand_channels",
+    "per_recording_zscore",
+    "load_csv",
     "Encoder",
     "ChemoprintHead",
 ]

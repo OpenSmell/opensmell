@@ -17,6 +17,13 @@ SENSOR_STD = np.array([126.42085266113281, 152.64385986328125, 205.7685546875,
                        63.45093536376953, 3.118058919906616, 39.982574462890625])
 
 
+def rs_r0_normalize(arr: np.ndarray, r0_frac: float = 0.15) -> np.ndarray:
+    n_baseline = max(5, int(len(arr) * r0_frac))
+    r0 = np.median(arr[:n_baseline], axis=0, keepdims=True)
+    r0 = np.where(r0 < 1.0, 1.0, r0)
+    return (arr - r0) / r0
+
+
 def detect_sensor_columns(df: pd.DataFrame):
     cols = []
     for expected in SENSOR_NAMES:
@@ -46,6 +53,59 @@ def load_csv(filepath: str, sensor_map: Optional[dict] = None):
         )
     raw = df[cols].values.astype(np.float32)
     return raw
+
+
+def expand_channels(arr: np.ndarray, mapping: Optional[list] = None, n_target: int = 6) -> np.ndarray:
+    """Map N-channel sensor data to M-channel encoder input.
+
+    Args:
+        arr: (T, N) raw sensor readings.
+        mapping: List of (from_ch, to_ch) pairs. If None, uses default
+                 3-channel mapping: [(0,0), (1,1), (0,2), (2,3), (1,4)].
+        n_target: Number of output channels (default 6 for SmellNet encoder).
+
+    Returns:
+        (T, n_target) expanded array.
+
+    Examples:
+        # 3 sensors: MQ-135, MQ-3, MQ-7 -> 6 encoder channels
+        expanded = expand_channels(arr_3ch)
+
+        # 4 sensors: MQ-135, MQ-3, MQ-6, MQ-7 -> 6 channels
+        expanded = expand_channels(arr_4ch, mapping=[(0,0), (1,1), (2,2), (3,3), (1,4)])
+
+        # 6 sensors: direct passthrough
+        expanded = expand_channels(arr_6ch, mapping=[(i,i) for i in range(6)])
+    """
+    if mapping is None:
+        mapping = [(0, 0), (1, 1), (0, 2), (2, 3), (1, 4)]
+    out = np.zeros((arr.shape[0], n_target), dtype=np.float32)
+    for src, dst in mapping:
+        if src < arr.shape[1] and dst < n_target:
+            out[:, dst] = arr[:, src]
+    # Fill unmapped channels with their training-set means
+    unmapped_means = {5: SENSOR_MEAN[5]}  # LPG mean
+    for ch, val in unmapped_means.items():
+        if ch < n_target and np.all(out[:, ch] == 0):
+            out[:, ch] = val
+    return out
+
+
+def per_recording_zscore(arr: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+    """Per-recording z-score normalization.
+
+    Device-agnostic: removes per-channel mean and variance from each
+    recording independently. Use instead of global z-score when
+    the recording's sensor baseline is unknown.
+
+    Args:
+        arr: (T, N) sensor readings.
+        eps: Small constant to avoid division by zero.
+
+    Returns:
+        (T, N) normalized array.
+    """
+    return (arr - arr.mean(axis=0, keepdims=True)) / (arr.std(axis=0, keepdims=True) + eps)
 
 
 def segment(sensor_array: np.ndarray):
