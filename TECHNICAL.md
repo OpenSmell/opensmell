@@ -1,12 +1,12 @@
 # OpenSmell: Technical Account
 
-**Version 1.0 — First Generation Electronic Nose Interoperability**
+**Version 1.1 — Session‑Invariant Representations for Metal‑Oxide Gas Sensors**
 
 ---
 
 Electronic noses are the next frontier, but do not interoperate. Every device speaks a different language because raw sensor readings—resistance values, voltages, ADC counts—vary with manufacturing tolerances, temperature, humidity, sensor age, and circuit design. The same garlic clove produces completely different raw readings on two different devices, or on the same device on different days. There is no common scale, no common format, and no common language.
 
-OpenSmell is a versioned, open standard that maps raw sensor data from any metal‑oxide (MOX) electronic nose into a stable, device‑agnostic format. It requires no calibration from the end user. It is designed to scale across sensor generations.
+OpenSmell is a versioned, open standard that maps raw sensor data from a 6‑sensor metal‑oxide (MOX) electronic nose (the SmellNet reference configuration) into a stable format. It requires no calibration from the end user for substances seen during training. The framework is designed to extend to other sensor configurations and sensor generations, but cross‑device generalisation is not yet validated.
 
 ---
 
@@ -22,7 +22,7 @@ $$
 
 where R₀ is the baseline resistance in clean air, C is the gas concentration, *a* is the sensitivity pre‑factor, and *b* is the stoichiometric exponent.
 
-MOX sensors produce a single physical signal: the free electron concentration in the SnO₂ conduction band. Every measurement is a function of that electron count, sampled across channels, over time, and relative to a baseline. There are no other degrees of freedom. The following four paradigms exhaust the set of transformations that can be applied to this signal. These four paradigms define what apps can be built on Gen 1 hardware.
+MOX sensors produce a single physical signal: the free electron concentration in the SnO₂ conduction band. Every measurement is a function of that electron count, sampled across channels, over time, and relative to a baseline. The following four paradigms cover the physically relevant transformations that can be applied to this signal, based on the known physics of MOX sensor operation. These four paradigms define what apps can be built on Gen 1 hardware.
 
 ---
 
@@ -77,7 +77,7 @@ Once trained, the encoder is frozen. It does not change when new applications ar
 
 ### 4.2 Results
 
-Trained on the SmellNet dataset (Dewei Feng et al., MIT Media Lab): 50 food substances, 6 MOX sensors, 828,000 time‑series readings, multiple measurement sessions on different days.
+Trained on the SmellNet dataset (Dewei Feng et al., MIT Media Lab): 44 of 50 food substances (6 not in FooDB — chamomile, chestnuts, peanuts, pecans, pistachios, walnuts), 6 MOX sensors, 828,000 time‑series readings, multiple measurement sessions on different days.
 
 **Held‑out measurement sessions (known substances):**
 - Classification accuracy: **81.78%** (random baseline: 2%)
@@ -99,9 +99,9 @@ The encoder does not generalise to substances whose resistance‑change patterns
 
 ---
 
-## 5. Cross‑Device Interoperability
+## 5. Towards Cross‑Device Operation
 
-### 5.1 The Adapter
+### 5.1 The Adapter (Aspirational — Not Yet Validated)
 
 The encoder was trained on SmellNet's 6‑channel sensor board. Raw voltages from a different sensor configuration live in a different coordinate system. The solution is a **per‑device adapter**—a small neural network trained once to translate between hardware configurations. The math:
 
@@ -123,23 +123,23 @@ $$
 \mathbf{z} = E(A(\mathbf{x}_B))
 $$
 
-The Universal Approximation Theorem guarantees that *A* can learn this mapping, provided the mapping is continuous and there is enough training data. The mapping is continuous because the underlying physics—electron‑count changes in SnO₂—is continuous. Both devices measure the same physical phenomenon through different sensor configurations.
+In theory, a sufficiently expressive MLP with enough paired data should be able to learn this mapping, because both devices measure the same physical phenomenon through different sensor configurations. In practice, the experiments (documented in `research/calibration-experiments/`) showed limited success — the best adapter achieved a garlic/ginger match score of only 0.187 (see `interoperability_report.json`). Adapter training remains an open problem.
 
-### 5.2 No Calibration for the End User
+### 5.2 Current Scope: Session‑Invariance, Not Calibration-Free Cross‑Device
 
-A user builds a device, installs the SDK, and runs `opensmell.process()`. The SDK calls the adapter, then the encoder. The adapter was trained once by the hardware developer. The encoder is frozen. The same garlic produces the same latent vector on every device that uses the same adapter.
-
-An app developer trains a classifier *C* on the latent space. The user downloads the app, which bundles *C*. The complete pipeline:
+Within a single device, a user can install the SDK and run `opensmell.process()` on recordings from the SmellNet sensor configuration:
 
 $$
-\text{label} = C(E(A(\mathbf{x}_B)))
+\text{label} = C(E(\mathbf{x}_S))
 $$
 
-At no point does the user calibrate anything. At no point is the encoder retrained. The adapter was trained once. The classifier was trained once. The user simply uses the device.
+The encoder *E* was trained once. The classifier *C* can be trained once on the latent space. **At no point does the user calibrate within a single device.** This is the session‑invariance result: the same substance on the same device on different days produces the same output (81.78% accuracy, R²=0.882 on held‑out sessions).
 
-### 5.3 The Device‑Invariance Progression
+**Cross‑device calibration is not yet solved.** The adapter approach described in §5.1 is the architectural design; experimental validation (see `research/calibration-experiments/`) is ongoing and has not achieved production‑ready accuracy. A user with a non‑SmellNet device cannot currently use the SDK without additional development work.
 
-The per‑device adapter works for a specific device pair. Two further approaches provide increasing generality:
+### 5.3 The Device‑Invariance Progression (Speculative)
+
+If the adapter problem is solved, two further approaches could provide increasing generality, but neither has been implemented or tested in this project:
 
 1. **Parameterised adapter:** One adapter trained on 3–5 diverse hardware configurations, taking (raw voltages + a hardware config vector describing sensor models, load resistor, supply voltage, ADC resolution) as input. After training, any new configuration within the convex hull of the training configurations works with no extra training. The user enters their sensor specs; the adapter already knows how to handle them.
 
@@ -180,7 +180,7 @@ MOX sensors are the first generation of electronic nose technology. The architec
 
 Each generation requires a new encoder trained on data from that sensor type. The architecture does not change. Old apps work with old encoders. New apps use new encoders. The SDK abstracts the versioning. The standard versions forward.
 
-**Current capability (Gen 1):** Classification of known substances, trajectory tracking over time, anomaly detection, and similarity search. Apps requiring quantitative ppm, chiral discrimination, or trace‑level detection are outside the current scope.
+**Current capability (Gen 1):** Classification of known substances on a single sensor configuration, trajectory tracking over time, anomaly detection, and similarity search. Cross‑device operation, novel substance identification, quantitative ppm measurements, chiral discrimination, and trace‑level detection are outside the current scope.
 
 **Future capability (Gen 2+):** The same SDK, the same API, and the same app ecosystem extend to new hardware. The standard is the language. The sensors are the speakers. Better speakers make the language more expressive; they do not require a new language.
 

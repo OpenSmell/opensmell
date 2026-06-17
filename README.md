@@ -1,6 +1,6 @@
 # OpenSmell SDK
 
-A universal translator for electronic noses. One function call turns raw sensor data into a chemical fingerprint.
+A session‑invariant encoder for 6‑sensor MOX electronic noses. One function call turns raw sensor data into a latent vector and chemical fingerprint.
 
 ```python
 import opensmell
@@ -13,7 +13,7 @@ print(result.chemoprint)   # 29-dim array
 
 ## Status
 
-**v1.0 — What it does:** Maps 6-sensor e-nose data to a 256-dim latent space and a 29-dim chemoprint. Trained on 44 food substances from SmellNet. Session-invariant (same food, different days → same output). Proven R² = 0.882 on held-out sessions of known substances.
+**v1.0 — What it does:** Maps 6-sensor e-nose data (SmellNet sensor configuration) to a 256-dim latent space and a 29-dim chemoprint. Trained on 44 food substances (of 50 in SmellNet; 6 lacking FooDB data). Session-invariant (same food, different days → same output). Proven R² = 0.882 on held-out sessions of known substances.
 
 **What it does NOT do:**
 - **Novel substances.** The encoder cannot generalise to foods it hasn't seen. Leave-substance-out validation gives negative R². It identifies substances it trained on, not unknown ones.
@@ -21,7 +21,7 @@ print(result.chemoprint)   # 29-dim array
 - **Environmental or industrial samples.** Trained on 44 foods only.
 - **Functional group granularity.** The 29 chemoprint dimensions are limited to basic structural properties. Rare functional groups (present in <20% of foods) have poor reconstruction (dim 16 R² = 0.43).
 
-**Independent reproduction:** Clone the universal-encoder repo. Run `src/train_encoder.py`. Our reported R² = 0.882 should reproduce within ±0.05. If not, file an issue.
+**Independent reproduction:** Clone the encoder repo. Run `src/train_encoder.py`. Our reported R² = 0.882 should reproduce within ±0.05. If not, file an issue.
 
 ## Quick start
 
@@ -68,7 +68,7 @@ Known in-distribution substances score > 0.99. Extreme OOD signals score ~0.69. 
 
 | Repo | Role |
 |------|------|
-| [universal-encoder](https://github.com/opensmell/universal-encoder) | Training code, model checkpoints, limitations |
+| [encoder](https://github.com/opensmell/encoder) | Training code, model checkpoints, limitations |
 | [chemoprint](https://github.com/opensmell/chemoprint) | Ground-truth 29-dim physicochemical descriptor |
 | [data-commons](https://github.com/opensmell/data-commons) | Standard format for contributed e-nose datasets |
 | [session-invariance](https://github.com/opensmell/session-invariance) | Proof that latent spaces can be session-invariant |
