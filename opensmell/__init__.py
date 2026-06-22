@@ -1,100 +1,83 @@
-import json
-from pathlib import Path
-from typing import Optional
-
 import numpy as np
-import torch
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
 
-from .encoder import Encoder
-from .heads import ChemoprintHead
-from .preprocessing import export_for_contribution as _export
-from .preprocessing import expand_channels, load_csv, per_recording_zscore, segment_and_normalize
+from . import features as _features
+from .preprocessing import load_csv, rs_r0_normalize, segment
 from .result import SmellResult
 
-_ROOT = Path(__file__).resolve().parent
 
-_encoder: Optional[Encoder] = None
-_chemoprint_head: Optional[ChemoprintHead] = None
-_prototypes: Optional[np.ndarray] = None
-_prototype_labels: Optional[list] = None
-
-
-def _lazy_init():
-    global _encoder, _chemoprint_head, _prototypes, _prototype_labels
-    if _encoder is None:
-        _encoder = Encoder.load_auto()
-        _chemoprint_head = ChemoprintHead.load("v1")
-        _prototypes = np.load(str(_ROOT / "data" / "prototypes.npy"))
-        with open(str(_ROOT / "data" / "prototype_labels.json")) as f:
-            _prototype_labels = json.load(f)
+def _feature_vector(feature_dict: dict) -> tuple:
+    keys = sorted(feature_dict.keys())
+    values = [feature_dict[k] for k in keys]
+    return np.array(values, dtype=np.float32), keys
 
 
-def process(filepath: str, norm: str = "global_z") -> SmellResult:
-    _lazy_init()
+def load_recording(filepath: str) -> np.ndarray:
     raw = load_csv(filepath)
-    if norm == "per_recording_z":
-        from .preprocessing import SENSOR_MEAN as SM, SENSOR_STD as SS
-        from .preprocessing import per_recording_zscore, segment
-        normed = per_recording_zscore(raw)
-        segments = segment(normed)
-        segments = (segments - SM) / SS
-    else:
-        segments = segment_and_normalize(raw)
-    latents = _encoder.encode(segments)
-    latent = latents.mean(axis=0)
-    latent_t = torch.tensor(latent[np.newaxis, :], dtype=torch.float32)
-    chemo = _chemoprint_head(latent_t).detach().numpy().flatten()
-    return _build_result(latent, chemo)
+    return rs_r0_normalize(raw)
 
 
-def process_array(array: np.ndarray) -> SmellResult:
-    _lazy_init()
-    if array.ndim == 2:
-        segments = segment_and_normalize(array)
-    else:
-        segments = segment_and_normalize(array[0])
-    latents = _encoder.encode(segments)
-    latent = latents.mean(axis=0)
-    latent_t = torch.tensor(latent[np.newaxis, :], dtype=torch.float32)
-    chemo = _chemoprint_head(latent_t).detach().numpy().flatten()
-    return _build_result(latent, chemo)
+def extract_features(filepath: str) -> tuple:
+    normed = load_recording(filepath)
+    segments = segment(normed)
+    all_features = []
+    for seg in segments:
+        feats = _features.extract_all_framework_features(seg)
+        vals, _ = _feature_vector(feats)
+        all_features.append(vals)
+    arr = np.array(all_features)
+    fnames = _features.feature_names()
+    return arr, fnames
 
 
-def _build_result(latent: np.ndarray, chemoprint: np.ndarray) -> SmellResult:
-    sims = cosine_similarity(latent.reshape(1, -1), _prototypes)[0]
-    best_idx = int(np.argmax(sims))
-    confidence = float(sims[best_idx])
-    substance = str(_prototype_labels[best_idx])
-    warning = None
-    should_contribute = False
-    if confidence < 0.7:
-        warning = (
-            "This smell is not well-represented in the OpenSmell dataset. "
-            "Your recording may be from a substance not yet catalogued. "
-            "Consider contributing it at opensmell.org/contribute"
+def process(filepath: str, model: Pipeline = None) -> SmellResult:
+    features_arr, fnames = extract_features(filepath)
+    if features_arr.shape[0] == 0:
+        return SmellResult(features=np.array([]), feature_names=fnames, n_windows=0)
+    avg_features = features_arr.mean(axis=0)
+    if model is not None:
+        pred = model.predict([avg_features])[0]
+        proba = model.predict_proba([avg_features]).max()
+        return SmellResult(
+            substance=str(pred),
+            confidence=float(proba),
+            features=avg_features,
+            feature_names=fnames,
+            n_windows=features_arr.shape[0],
         )
-        should_contribute = True
     return SmellResult(
-        substance=substance,
-        confidence=confidence,
-        warning=warning,
-        should_contribute=should_contribute,
-        contribution_url="https://opensmell.onrender.com/contribute",
-        chemoprint=chemoprint,
-        latent=latent,
+        features=avg_features,
+        feature_names=fnames,
+        n_windows=features_arr.shape[0],
     )
 
 
-export_for_contribution = _export
+def train(X: np.ndarray, y: np.ndarray, n_estimators: int = 200) -> Pipeline:
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", RandomForestClassifier(
+            n_estimators=n_estimators,
+            class_weight="balanced",
+            random_state=42,
+            n_jobs=-1,
+        )),
+    ])
+    model.fit(X, y)
+    return model
+
+
+def predict(filepath: str, model: Pipeline) -> SmellResult:
+    return process(filepath, model=model)
+
 
 __all__ = [
+    "extract_features",
     "process",
-    "process_array",
-    "export_for_contribution",
-    "expand_channels",
-    "per_recording_zscore",
-    "load_csv",
-    "Encoder",
-    "ChemoprintHead",
+    "train",
+    "predict",
+    "load_recording",
+    "feature_names",
+    "SmellResult",
 ]

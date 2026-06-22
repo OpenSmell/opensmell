@@ -1,14 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import numpy as np
 
 
 @dataclass
 class SmellResult:
-    substance: str
-    confidence: float
-    warning: Optional[str]
-    should_contribute: bool
-    contribution_url: str
-    chemoprint: np.ndarray
-    latent: np.ndarray
+    substance: Optional[str] = None
+    confidence: Optional[float] = None
+    features: np.ndarray = field(default_factory=lambda: np.array([]))
+    feature_names: list = field(default_factory=list)
+    n_windows: int = 0

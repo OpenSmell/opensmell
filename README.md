@@ -1,27 +1,20 @@
 # OpenSmell SDK
 
-A session‑invariant encoder for 6‑sensor MOX electronic noses. One function call turns raw sensor data into a latent vector and chemical fingerprint.
+Extract device-agnostic framework features from electronic nose recordings.
 
 ```python
 import opensmell
 
-result = opensmell.process("my_recording.csv")
-print(result.substance)    # "cinnamon"
-print(result.confidence)   # 0.99
-print(result.chemoprint)   # 29-dim array
+# Extract 145 framework features from a CSV
+features, names = opensmell.extract_features("recording.csv")
+
+# Train a classifier on your own data
+model = opensmell.train(features_matrix, labels)
+
+# Predict a new recording
+result = opensmell.predict("recording.csv", model)
+print(result.substance, result.confidence)
 ```
-
-## Status
-
-**v1.0 — What it does:** Maps 6-sensor e-nose data (SmellNet sensor configuration) to a 256-dim latent space and a 29-dim chemoprint. Trained on 44 food substances (of 50 in SmellNet; 6 lacking FooDB data). Session-invariant (same food, different days → same output). Proven R² = 0.882 on held-out sessions of known substances.
-
-**What it does NOT do:**
-- **Novel substances.** The encoder cannot generalise to foods it hasn't seen. Leave-substance-out validation gives negative R². It identifies substances it trained on, not unknown ones.
-- **Cross-device.** All data from one sensor board. Device-invariance requires multi-device data (not yet collected).
-- **Environmental or industrial samples.** Trained on 44 foods only.
-- **Functional group granularity.** The 29 chemoprint dimensions are limited to basic structural properties. Rare functional groups (present in <20% of foods) have poor reconstruction (dim 16 R² = 0.43).
-
-**Independent reproduction:** Clone the encoder repo. Run `src/train_encoder.py`. Our reported R² = 0.882 should reproduce within ±0.05. If not, file an issue.
 
 ## Quick start
 
@@ -32,43 +25,80 @@ pip install .
 ```python
 import opensmell
 
-# From CSV file — 100+ rows with columns NO2, C2H5OH, VOC, CO, Alcohol, LPG
-result = opensmell.process("cinnamon_6.csv")
+# From CSV file — columns: NO2, C2H5OH, VOC, CO, Alcohol, LPG
+features, names = opensmell.extract_features("cinnamon.csv")
+# features: (N_windows, 145) numpy array
+# names: list of 145 feature name strings
 
-# From live sensor array (100 time steps × 6 sensors)
-import numpy as np
-live_data = np.random.randn(100, 6)  # replace with real readings
-result = opensmell.process_array(live_data)
-
-# Check confidence — warning if < 0.7 threshold
-if result.warning:
-    print(result.warning)
-    opensmell.export_for_contribution("my_recording.csv", result, output_dir="./contrib/")
+# Average features across all windows
+avg_features = features.mean(axis=0)
 ```
+
+### Training a custom classifier
+
+```python
+import opensmell
+import numpy as np
+
+# Build a feature matrix from multiple recordings
+X, y = [], []
+for substance in ["cinnamon", "garlic", "coffee"]:
+    feats, _ = opensmell.extract_features(f"{substance}.csv")
+    X.append(feats.mean(axis=0))
+    y.append(substance)
+
+X = np.array(X)
+
+# Train
+model = opensmell.train(X, y)
+
+# Predict a new recording
+result = opensmell.predict("unknown.csv", model)
+print(f"Predicted: {result.substance} (confidence: {result.confidence:.2f})")
+```
+
+## How it works
+
+The SDK applies Rs/R₀ normalization (baseline correction) to raw sensor readings, then extracts 145 features across 5 taxonomy categories:
+
+| Category | Features per channel | Purpose |
+|----------|---------------------|---------|
+| Device-Agnostic | 6 | Cross-device interoperability (ΔR/R₀, rise time, decay time, AUC) |
+| Absolute | 4 | Quantitative sensing (raw resistance, voltage) |
+| Temporal | 4 | Fast dynamics (oscillation frequency, transients) |
+| Health | 4 | Predictive maintenance (drift rate, noise floor) |
+| Hardware | 3 | Device characterization (ADC noise, thermal profile) |
+
+Plus 15 cross-channel selectivity ratios and 4 global features. Total: 145 dimensions.
+
+This feature set is mathematically proven to cancel both Vcc and RL variations, enabling theoretical cross-device interoperability. See the paper for details.
 
 ## Output
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `substance` | str | Predicted substance name (nearest prototype) |
-| `confidence` | float | Cosine similarity to nearest prototype (0–1) |
-| `warning` | str or None | Warning if confidence < 0.7 (OOD detection) |
-| `should_contribute` | bool | True if confidence < 0.7 |
-| `chemoprint` | np.ndarray | 29-dim physicochemical descriptor |
-| `latent` | np.ndarray | 256-dim latent vector |
-| `contribution_url` | str | URL for data contribution |
+| `substance` | str or None | Predicted label (only from `predict`) |
+| `confidence` | float or None | Prediction probability |
+| `features` | np.ndarray | 145-dim average framework features |
+| `feature_names` | list | 145 feature name strings |
+| `n_windows` | int | Number of sliding windows processed |
 
-## How confidence works
+## API
 
-The SDK stores 44 prototype latent vectors (mean latent per training substance). At inference, it computes cosine similarity between the new latent and all prototypes. The highest similarity is the predicted substance; that similarity is the confidence.
+| Function | Description |
+|----------|-------------|
+| `extract_features(filepath)` | Extract (N_windows × 145) features from CSV |
+| `process(filepath, model=None)` | Single-call: extract features, optionally predict |
+| `train(X, y)` | Train a sklearn Pipeline (StandardScaler + RandomForest) |
+| `predict(filepath, model)` | Shorthand for process with a model |
+| `load_recording(filepath)` | Load and Rs/R₀-normalize a CSV |
 
-Known in-distribution substances score > 0.99. Extreme OOD signals score ~0.69. The 0.7 threshold is conservative — tune it per application.
+## Dependencies
 
-## Related repos
+- Python 3.10+
+- numpy, pandas, scikit-learn, scipy
 
-| Repo | Role |
-|------|------|
-| [encoder](https://github.com/opensmell/encoder) | Training code, model checkpoints, limitations |
-| [chemoprint](https://github.com/opensmell/chemoprint) | Ground-truth 29-dim physicochemical descriptor |
-| [data-commons](https://github.com/opensmell/data-commons) | Standard format for contributed e-nose datasets |
-| [session-invariance](https://github.com/opensmell/session-invariance) | Proof that latent spaces can be session-invariant |
+## Related
+
+- [interoperability](https://github.com/opensmell/interoperability) — Canonical experiments validating the framework
+- [Chemoprint](https://github.com/opensmell/chemoprint) — 29-dim physicochemical descriptor from SMILES

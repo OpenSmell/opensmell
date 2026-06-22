@@ -1,25 +1,18 @@
 [project]
 name = "opensmell"
-version = "1.0.0"
-description = "OpenSmell SDK — a universal translator for electronic noses"
+version = "2.0.0"
+description = "OpenSmell SDK — extract device-agnostic framework features from electronic nose recordings"
 requires-python = ">=3.10"
 dependencies = [
-    "torch",
     "numpy",
     "pandas",
     "scikit-learn",
+    "scipy",
 ]
-
-[project.optional-dependencies]
-chemoprint = ["opensmell-chemoprint @ git+https://github.com/opensmell/chemoprint.git"]
 
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["opensmell", "opensmell.data", "opensmell.weights"]
-include-package-data = true
-
-[tool.setuptools.package-data]
-opensmell = ["data/*", "weights/*"]
+packages = ["opensmell"]
