@@ -1,11 +1,23 @@
+import warnings
 import numpy as np
-from scipy import signal as sp_signal
+from scipy import signal as sp_signal, optimize as sp_optimize
+
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="scipy.optimize")
+warnings.filterwarnings("ignore", message="Covariance of the parameters could not be estimated")
 
 N_CHANNELS = 6
 
 
 def _exp_decay(t, a, tau, c):
     return a * np.exp(-t / tau) + c
+
+
+def _bi_exp_decay(t, a1, tau1, a2, tau2, c):
+    return a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2) + c
+
+
+def _tri_exp_decay(t, a1, tau1, a2, tau2, a3, tau3, c):
+    return a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2) + a3 * np.exp(-t / tau3) + c
 
 
 def compute_channel_device_agnostic(series, r0_samples=15, sr=10):
@@ -186,6 +198,120 @@ def compute_channel_health(series, r0_samples=15):
     }
 
 
+def compute_multi_exp_decay(series, peak_idx=None, sr=10):
+    """Fit multi-exponential decay constants (tau1, tau2, tau3) to the recovery phase.
+
+    Physical meaning: Different binding sites on the MOX surface have different
+    desorption activation energies. Fast sites (tau1 ~1-3s) correspond to weakly
+    adsorbed molecules; slow sites (tau3 ~10-30s) correspond to strongly bound
+    species. The ratio tau3/tau1 indicates surface heterogeneity.
+
+    Returns dict with tau1, tau2, tau3 and amplitudes a1, a2, a3.
+    Returns -1 for all if fitting fails.
+    """
+    series = np.asarray(series, dtype=np.float64)
+    if len(series) < 20:
+        return {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
+                "a1": -1.0, "a2": -1.0, "a3": -1.0}
+
+    if peak_idx is None:
+        R0_est = np.median(series[:min(15, len(series)//3)])
+        peak_idx = np.argmax(np.abs(series - R0_est))
+    peak_idx = max(5, min(peak_idx, len(series) - 10))
+
+    recovery = series[peak_idx:]
+    if len(recovery) < 10:
+        return {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
+                "a1": -1.0, "a2": -1.0, "a3": -1.0}
+
+    t = np.arange(len(recovery), dtype=np.float64) / sr
+    y = recovery - recovery[-1]  # zero-end
+    y = y[:len(t)]
+
+    if np.all(y == 0) or np.std(y) < 1e-8:
+        return {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
+                "a1": -1.0, "a2": -1.0, "a3": -1.0}
+
+    a0 = y[0]
+    results = {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
+               "a1": -1.0, "a2": -1.0, "a3": -1.0}
+
+    try:
+        popt, _ = sp_optimize.curve_fit(
+            _exp_decay, t, y,
+            p0=[a0, 3.0, 0],
+            maxfev=2000,
+        )
+        results["tau1"] = float(abs(popt[1]))
+        results["a1"] = float(popt[0])
+    except (RuntimeError, ValueError):
+        pass
+
+    try:
+        popt, _ = sp_optimize.curve_fit(
+            _bi_exp_decay, t, y,
+            p0=[a0 * 0.7, 2.0, a0 * 0.3, 10.0, 0],
+            maxfev=5000,
+        )
+        results["tau1"] = float(abs(popt[1]))
+        results["tau2"] = float(abs(popt[3]))
+        results["a1"] = float(popt[0])
+        results["a2"] = float(popt[2])
+    except (RuntimeError, ValueError):
+        pass
+
+    if len(recovery) >= 30:
+        try:
+            popt, _ = sp_optimize.curve_fit(
+                _tri_exp_decay, t, y,
+                p0=[a0 * 0.5, 1.5, a0 * 0.3, 5.0, a0 * 0.2, 20.0, 0],
+                maxfev=10000,
+            )
+            results["tau1"] = float(abs(popt[1]))
+            results["tau2"] = float(abs(popt[3]))
+            results["tau3"] = float(abs(popt[5]))
+            results["a1"] = float(popt[0])
+            results["a2"] = float(popt[2])
+            results["a3"] = float(popt[4])
+        except (RuntimeError, ValueError):
+            pass
+
+    return results
+
+
+def compute_saturation_index(series, r0_samples=15):
+    """Compute how close the sensor response is to its estimated saturation capacity.
+
+    Saturation index = observed response / estimated saturation response.
+    0.0 = no response, 1.0 = fully saturated.
+
+    Physical meaning: At high concentrations, all surface sites are occupied
+    and the sensor cannot respond further. The saturation index tracks how
+    close to this limit the current measurement is, derived from the Langmuir
+    adsorption isotherm approximation.
+
+    Uses a simple empirical estimator: ratio of current response to the
+    maximum ever observed response in the series, scaled by noise floor.
+    """
+    series = np.asarray(series, dtype=np.float64)
+    if len(series) < r0_samples + 5:
+        return 0.0
+
+    R0 = np.median(series[:r0_samples])
+    if R0 <= 0:
+        return 0.0
+
+    norm = np.abs(series - R0) / R0
+    current_response = float(np.max(norm))
+    noise_floor = float(np.std(norm[:r0_samples]))
+
+    if current_response < noise_floor * 2:
+        return 0.0
+
+    saturation = min(1.0, current_response / (current_response + noise_floor * 10))
+    return float(saturation)
+
+
 def compute_channel_hardware(series):
     series = np.asarray(series, dtype=np.float64)
     if len(series) < 2:
@@ -221,6 +347,7 @@ def extract_all_framework_features(data, r0_samples=15, sr=10):
     temporal_results = []
     health_results = []
     hardware_results = []
+    decay_results = []
 
     for ch in range(n_ch):
         series = data[:, ch]
@@ -241,6 +368,13 @@ def extract_all_framework_features(data, r0_samples=15, sr=10):
         ha = compute_channel_hardware(series)
         hardware_results.append(ha)
 
+        pk = da.get("peak_idx", len(series) // 2)
+        dec = compute_multi_exp_decay(series, peak_idx=pk, sr=sr)
+        decay_results.append(dec)
+
+        sat = compute_saturation_index(series, r0_samples)
+        features[f"ch{ch}_advanced_saturation_index"] = sat
+
         for feat_name in ["relative_amplitude", "direction", "rise_time",
                            "decay_time", "auc", "endpoint_delta"]:
             features[f"ch{ch}_da_{feat_name}"] = da.get(feat_name, -1.0)
@@ -259,6 +393,9 @@ def extract_all_framework_features(data, r0_samples=15, sr=10):
 
         for feat_name in ["circuit_response", "thermal_profile", "adc_noise"]:
             features[f"ch{ch}_hw_{feat_name}"] = ha.get(feat_name, 0.0)
+
+        for feat_name in ["tau1", "tau2", "tau3", "a1", "a2", "a3"]:
+            features[f"ch{ch}_decay_{feat_name}"] = dec.get(feat_name, -1.0)
 
     active = [i for i, r in enumerate(device_agnostic_results)
               if not r.get("is_dead", True) and r.get("relative_amplitude", 0) > 0]
@@ -315,6 +452,10 @@ def feature_names():
     for ch in range(n_ch):
         for fn in ["circuit_response", "thermal_profile", "adc_noise"]:
             names.append(f"ch{ch}_hw_{fn}")
+    for ch in range(n_ch):
+        names.append(f"ch{ch}_advanced_saturation_index")
+        for fn in ["tau1", "tau2", "tau3", "a1", "a2", "a3"]:
+            names.append(f"ch{ch}_decay_{fn}")
     for ch_i in range(n_ch):
         for ch_j in range(ch_i + 1, n_ch):
             names.append(f"sel_ratio_ch{ch_i}_ch{ch_j}")

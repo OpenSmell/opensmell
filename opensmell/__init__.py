@@ -40,9 +40,15 @@ def process(filepath: str, model: Pipeline = None) -> SmellResult:
     if model is not None:
         pred = model.predict([avg_features])[0]
         proba = model.predict_proba([avg_features]).max()
+        warning = ""
+        if proba < 0.5:
+            warning = "Low confidence"
+        elif proba < 0.7:
+            warning = "Moderate confidence"
         return SmellResult(
             substance=str(pred),
             confidence=float(proba),
+            warning=warning,
             features=avg_features,
             feature_names=fnames,
             n_windows=features_arr.shape[0],
