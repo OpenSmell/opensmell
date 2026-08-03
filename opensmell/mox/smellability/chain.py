@@ -184,7 +184,11 @@ def run_constituent_chain(c: Chemical) -> ConstituentVerdict:
             id="identity",
             label="Identity & properties",
             verdict="green",
-            reason=f"{c.name} resolved from the compound dictionary.",
+            reason=(
+                f"{c.name} resolved from the compound dictionary."
+                if c.id in COMPOUND_BY_ID
+                else f"{c.name} reconstructed from its SMILES structure."
+            ),
             detail=(
                 f"{c.name}{f' (CAS {c.cas})' if c.cas else ''}. "
                 f"Molecular weight {f'{mw:.1f} g/mol' if mw is not None else 'unknown'}, "

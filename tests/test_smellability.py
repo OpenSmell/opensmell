@@ -18,12 +18,15 @@ from opensmell.mox.smellability import (
     EnrichedChemical,
     IncidentFluxInput,
     build_provisional_chemical,
+    chemical_from_smiles,
     delta_h_vap_trouton,
     diffusion_volume_from_mw,
     dominant_percept,
+    estimate_molecular_weight,
     estimate_vapor_pressure_from_boiling_point,
     headspace_ppm_band,
     infer_functional_groups,
+    joback_boiling_point_k,
     kekule_to_aromatic,
     percepts_for,
     perceptual_summary,
@@ -474,3 +477,98 @@ class TestEstimateVaporPressureFromBoilingPoint:
         p = estimate_vapor_pressure_from_boiling_point(78.2)
         assert p > 5000
         assert p < 50000
+
+
+# ------------------------------------------------ structure-in inference (SMILES)
+
+class TestStructureInInference:
+    def test_builds_ethanol_from_smiles_with_estimated_props(self):
+        c = chemical_from_smiles("CCO")
+        assert c.props.molecular_weight.source == "estimated"
+        assert c.props.boiling_point.source == "estimated"
+        assert c.props.molecular_weight.value == pytest.approx(46.07, abs=0.05)
+        assert c.props.boiling_point.value == pytest.approx(64.4, abs=1.0)
+        assert "alcohol" in c.props.functional_groups
+        assert c.props.redox_active is True
+        assert c.props.gas is False
+
+    def test_molecular_weight_is_exact_for_small_compounds(self):
+        assert estimate_molecular_weight("O") == pytest.approx(18.02, abs=0.01)
+        assert estimate_molecular_weight("O=C=O") == pytest.approx(44.01, abs=0.01)
+        assert estimate_molecular_weight("c1ccccc1") == pytest.approx(78.11, abs=0.01)
+        assert estimate_molecular_weight("N#N") == pytest.approx(28.01, abs=0.01)
+
+    def test_joback_bp_close_to_nist_for_common_vocs(self):
+        assert joback_boiling_point_k("c1ccccc1") - 273.15 == pytest.approx(85.4, abs=2.0)
+        assert joback_boiling_point_k("n1ccccc1") - 273.15 == pytest.approx(116.2, abs=2.0)
+        assert joback_boiling_point_k("CC(C)=O") - 273.15 == pytest.approx(49.0, abs=2.0)
+
+    def test_kekule_and_aromatic_notations_agree(self):
+        a = chemical_from_smiles("c1ccccc1")
+        b = chemical_from_smiles("C1=CC=CC=C1")
+        assert a.props.molecular_weight.value == b.props.molecular_weight.value
+        assert a.props.boiling_point.value == b.props.boiling_point.value
+        assert sorted(a.props.functional_groups) == sorted(b.props.functional_groups)
+
+    def test_inferred_chemical_runs_the_full_chain(self):
+        v = run_chemical_verdict(chemical_from_smiles("CCO"))
+        assert v.verdict == "green"
+        assert v.signal_strength == "strong"
+        assert v.confidence == "medium"
+        identity = next(s for s in v.steps if s.id == "identity")
+        assert "SMILES structure" in identity.reason
+
+    def test_carbon_dioxide_is_structurally_inert(self):
+        c = chemical_from_smiles("O=C=O")
+        assert c.props.non_redox is True
+        assert c.props.redox_active is False
+        assert run_chemical_verdict(c).verdict == "red"
+
+    def test_inorganic_inerts_and_reducing_organics_classify_by_structure(self):
+        assert chemical_from_smiles("N#N").props.redox_active is False
+        assert chemical_from_smiles("O").props.redox_active is False
+        assert chemical_from_smiles("c1ccccc1").props.redox_active is True
+        assert chemical_from_smiles("CC(C)=O").props.redox_active is True
+        assert chemical_from_smiles("CCOCC").props.redox_active is True
+
+    def test_id_is_deterministic_per_smiles(self):
+        assert chemical_from_smiles("CCO").id == chemical_from_smiles("CCO").id
+        assert chemical_from_smiles("CCO").id != chemical_from_smiles("CCOC").id
+
+    def test_unparseable_smiles_raises(self):
+        with pytest.raises(ValueError):
+            chemical_from_smiles("not-a-smiles")
+
+    # ------------------------------------------------------------------
+    # Pure-path Joback parity regressions. Every Tb below was cross-checked
+    # against the RDKit SMARTS path on the 720-compound ODT corpus and must
+    # stay equal (pure-vs-RDKit |delta| = 0.000 K after the 2026 parity fixes:
+    # ring-closure sequential pairing, dot-fragment salts, bridge-based ring
+    # membership, aromatic carbonyls, and C=X/C=N/C=S double bonds).
+    @pytest.mark.parametrize(
+        ("label", "smiles", "mw", "tb_k"),
+        [
+            # Fused ring via reused digit (dibenzofuran `...c12`): the four
+            # `1` occurrences must pair sequentially or the second ring is lost.
+            ("fused ring / reused digit", "c1ccc2c(c1)oc1ccccc12", 168.19, 567.3),
+            # Salt: `[S-]` must not bond to `[K+]` across the dot, and the
+            # C=S carbon counts as `=C<` (only `=[#8]` is excluded by RDKit).
+            ("salt / C=S", "CCOC(=S)[S-].[K+]", 160.29, 291.2),
+            # Formate O=C-O: carbonyl contributes nothing (neither ester nor
+            # aldehyde) and the ester-O is not an ether.
+            ("formate", "O=COCCc1ccccc1", 150.18, 408.6),
+            # Lactone written `O=c1`: ring atom with exocyclic =O is a carbonyl
+            # (counted as -COO- ester), not an aromatic `=C<`.
+            ("coumarin lactone", "O=c1ccc2ccccc2o1", 146.15, 501.7),
+            # Spiro/fused bicyclic: every atom lies on a ring.
+            ("spiro bicyclic", "CC12OCCC1SCS2", 162.27, 481.75),
+            # Bridges between rings (S-S, Ar-O-Ar) are not ring atoms.
+            ("disulfide bridge", "c1ccc(SSc2ccccc2)cc1", 218.33, 665.1),
+            ("aryl ether bridge", "c1ccc(Oc2ccccc2)cc1", 170.21, 549.9),
+            # Cumulated S=C=N counts as `=C=` (any two double bonds).
+            ("isothiocyanate", "S=C=Nc1ccccc1", 135.18, 463.6),
+        ],
+    )
+    def test_joback_parity_cases(self, label, smiles, mw, tb_k):
+        assert estimate_molecular_weight(smiles) == pytest.approx(mw, abs=0.01)
+        assert joback_boiling_point_k(smiles) == pytest.approx(tb_k, abs=0.05)

@@ -51,6 +51,13 @@ from .enrichment import (
     parse_boiling_point,
 )
 from .groups import infer_functional_groups, kekule_to_aromatic
+from .inference import (
+    JOBACK_BASE_K,
+    JOBACK_GROUPS,
+    chemical_from_smiles,
+    estimate_molecular_weight,
+    joback_boiling_point_k,
+)
 from .ontology import (
     MOX_BOUNDARIES,
     PERCEPTS,
@@ -136,6 +143,8 @@ __all__ = [
     "FeasibilityVerdict",
     "Guidance",
     "IncidentFluxInput",
+    "JOBACK_BASE_K",
+    "JOBACK_GROUPS",
     "MAX_SUBSTANCES",
     "MOX_BOUNDARIES",
     "MOX_FLOOR_PPM",
@@ -152,6 +161,7 @@ __all__ = [
     "MoxBoundary",
     "Percept",
     "build_provisional_chemical",
+    "chemical_from_smiles",
     "concentration_at_distance",
     "delta_h_vap_trouton",
     "describe_boundaries",
@@ -159,6 +169,7 @@ __all__ = [
     "diffusion_volume_from_mw",
     "dominant_percept",
     "effective_vapor_pressure",
+    "estimate_molecular_weight",
     "estimate_vapor_pressure_from_boiling_point",
     "evaporation_flux",
     "exact_resolve",
@@ -169,6 +180,7 @@ __all__ = [
     "incident_flux_proportional",
     "infer_functional_groups",
     "is_low_volatility_percept",
+    "joback_boiling_point_k",
     "kekule_to_aromatic",
     "lookup_pubchem",
     "lookup_pubchem_boiling_point",

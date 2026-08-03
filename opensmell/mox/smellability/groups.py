@@ -78,6 +78,14 @@ def _scan_smiles(smiles: str) -> Tuple[List[_Atom], List[Tuple[int, int]]]:
             pending_dpos = None
             i += 1
             continue
+        if ch == ".":
+            # Disconnected fragment (e.g. `[S-].[K+]` salts): no bond is formed
+            # with the previous atom, so the "last" pointer must reset.
+            last = -1
+            pending_bond = 1
+            pending_dpos = None
+            i += 1
+            continue
         if ch == "%":
             d = int(smiles[i + 1 : i + 3])
             if last >= 0:
@@ -120,14 +128,15 @@ def _scan_smiles(smiles: str) -> Tuple[List[_Atom], List[Tuple[int, int]]]:
         i += 1
 
     # Ring closures: an atom written `C1` and a later `C1` (or `=C1`) close the
-    # same ring. The closure bond is single in Kekulé notation.
+    # same ring. The closure bond is single in Kekulé notation. A digit may be
+    # reused for a later ring (e.g. dibenzofuran `c1ccc2c(c1)oc1ccccc12`), so
+    # occurrences pair up sequentially: 1st-2nd, 3rd-4th, and so on.
     ring_pairs: List[Tuple[int, int]] = []
     for occ in digit_to_atoms.values():
-        if len(occ) != 2:
-            continue
-        x, y = occ
-        ring_pairs.append((x, y))
-        push_edge(x, y, 1)
+        for k in range(1, len(occ), 2):
+            x, y = occ[k - 1], occ[k]
+            ring_pairs.append((x, y))
+            push_edge(x, y, 1)
 
     return atoms, ring_pairs
 
