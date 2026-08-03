@@ -5,4 +5,4 @@ Everything that assumes metal-oxide (SnO2) sensors lives under
 scorer, and the MOX thermodynamic feasibility chain (`opensmell.mox.smellability`).
 """
 
-from . import features, normalize, quality  # noqa: F401
+from . import features, normalize, quality, smellability  # noqa: F401

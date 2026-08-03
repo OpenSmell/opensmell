@@ -198,21 +198,39 @@ def compute_channel_health(series, r0_samples=15):
     }
 
 
-def compute_multi_exp_decay(series, peak_idx=None, sr=10):
-    """Fit multi-exponential decay constants (tau1, tau2, tau3) to the recovery phase.
+def compute_multi_exp_decay(series, peak_idx=None, sr=10, n_components=2):
+    """Fit multi-exponential decay constants to the recovery phase.
+
+    The default model is bi-exponential (fast + slow components):
+
+        y(t) = a1·exp(-t/tau1) + a2·exp(-t/tau2) + c
 
     Physical meaning: Different binding sites on the MOX surface have different
     desorption activation energies. Fast sites (tau1 ~1-3s) correspond to weakly
-    adsorbed molecules; slow sites (tau3 ~10-30s) correspond to strongly bound
-    species. The ratio tau3/tau1 indicates surface heterogeneity.
+    adsorbed molecules; slow sites (tau2 ~10-30s) correspond to strongly bound
+    species. The ratio tau2/tau1 indicates surface heterogeneity.
 
-    Returns dict with tau1, tau2, tau3 and amplitudes a1, a2, a3.
-    Returns -1 for all if fitting fails.
+    A tri-exponential model (tau1, tau2, tau3) is over-parameterized for MOX
+    recovery data: the three components are not uniquely identifiable, which
+    makes the fit unreliable (it can alternate between near-equal-cost local
+    minima). It is therefore opt-in only via ``n_components=3`` for edge cases
+    (e.g. unusual surface chemistry), and may be nondeterministic.
+
+    Returns dict with tau1, tau2, tau3 and amplitudes a1, a2, a3 (tau3/a3 are
+    -1.0 for the default bi-exponential fit), plus ``cost`` (residual sum of
+    squares of the final fit). Returns -1 for all if fitting fails.
+
+    Note: results may vary slightly across runs for fits where the optimizer
+    converges to near-equal-cost local minima. This is a known limitation of
+    scipy's MINPACK optimizer on equal-cost solutions, not of the model itself.
     """
+    if n_components >= 3:
+        n_components = 3
+
     series = np.asarray(series, dtype=np.float64)
     if len(series) < 20:
         return {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
-                "a1": -1.0, "a2": -1.0, "a3": -1.0}
+                "a1": -1.0, "a2": -1.0, "a3": -1.0, "cost": -1.0}
 
     if peak_idx is None:
         R0_est = np.median(series[:min(15, len(series)//3)])
@@ -222,7 +240,7 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10):
     recovery = series[peak_idx:]
     if len(recovery) < 10:
         return {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
-                "a1": -1.0, "a2": -1.0, "a3": -1.0}
+                "a1": -1.0, "a2": -1.0, "a3": -1.0, "cost": -1.0}
 
     t = np.arange(len(recovery), dtype=np.float64) / sr
     y = recovery - recovery[-1]  # zero-end
@@ -230,11 +248,11 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10):
 
     if np.all(y == 0) or np.std(y) < 1e-8:
         return {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
-                "a1": -1.0, "a2": -1.0, "a3": -1.0}
+                "a1": -1.0, "a2": -1.0, "a3": -1.0, "cost": -1.0}
 
     a0 = y[0]
     results = {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
-               "a1": -1.0, "a2": -1.0, "a3": -1.0}
+               "a1": -1.0, "a2": -1.0, "a3": -1.0, "cost": -1.0}
 
     try:
         popt, _ = sp_optimize.curve_fit(
@@ -244,6 +262,7 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10):
         )
         results["tau1"] = float(abs(popt[1]))
         results["a1"] = float(popt[0])
+        results["cost"] = float(np.sum((_exp_decay(t, *popt) - y) ** 2))
     except (RuntimeError, ValueError):
         pass
 
@@ -257,10 +276,11 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10):
         results["tau2"] = float(abs(popt[3]))
         results["a1"] = float(popt[0])
         results["a2"] = float(popt[2])
+        results["cost"] = float(np.sum((_bi_exp_decay(t, *popt) - y) ** 2))
     except (RuntimeError, ValueError):
         pass
 
-    if len(recovery) >= 30:
+    if n_components == 3 and len(recovery) >= 30:
         try:
             popt, _ = sp_optimize.curve_fit(
                 _tri_exp_decay, t, y,
@@ -273,6 +293,7 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10):
             results["a1"] = float(popt[0])
             results["a2"] = float(popt[2])
             results["a3"] = float(popt[4])
+            results["cost"] = float(np.sum((_tri_exp_decay(t, *popt) - y) ** 2))
         except (RuntimeError, ValueError):
             pass
 

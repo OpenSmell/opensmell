@@ -1,13 +1,202 @@
 """MOX thermodynamic feasibility chain (Smellability).
 
-Placeholder for the Python port of `osmograph-web/lib/smellability/` — the
-4-step chain (identity -> volatility -> headspace concentration -> MOX redox
-check). Lives under `opensmell.mox` because it encodes MOX-specific physics
-(MOX response floor, redox activity at 300C), not generic chemistry.
+Python port of `osmograph-web/lib/smellability/` — the 4-step chain (identity ->
+volatility -> headspace concentration -> MOX redox check). Lives under
+`opensmell.mox` because it encodes MOX-specific physics (MOX response floor,
+redox activity at 300C), not generic chemistry.
 
-Populated in M3 of the opensmell port plan; modules to land here:
-chain, transport, constants, types, compounds, composites, ontology, groups,
-enrichment (PubChem), provisional, search, user_dictionary, index.
+Mirrors the TypeScript `index.ts` re-exports 1:1.
 """
 
 from __future__ import annotations
+
+from .chain import (
+    ChainOptions,
+    EffectiveVaporPressure,
+    Guidance,
+    effective_vapor_pressure,
+    guidance,
+    resolve_and_run,
+    run_chemical_verdict,
+    run_class_verdict,
+    run_composite_verdict,
+    run_constituent_chain,
+    signal_score,
+    speed_from_volatility,
+    worst_verdict,
+)
+from .composites import COMPOSITE_BY_ID, COMPOSITES
+from .compounds import COMPOUNDS, COMPOUND_BY_ID, REFERENCE_COMPOUND
+from .constants import (
+    AMBIENT_TEMP_C,
+    AMBIENT_TEMP_K,
+    CLASS_TERMS,
+    DEFAULT_DISTANCE_M,
+    DEFAULT_SENSOR_COUNT,
+    MAX_SUBSTANCES,
+    MOX_FLOOR_PPM,
+    REFERENCE_CHEMICAL_ID,
+    SENSOR_COUNT_OPTIONS,
+    Band,
+    headspace_ppm_band,
+    signal_band_label,
+    volatility_label,
+)
+from .enrichment import (
+    EnrichedBoilingPoint,
+    EnrichedChemical,
+    extract_boiling_point_c,
+    lookup_pubchem,
+    lookup_pubchem_boiling_point,
+    parse_boiling_point,
+)
+from .groups import infer_functional_groups, kekule_to_aromatic
+from .ontology import (
+    MOX_BOUNDARIES,
+    PERCEPTS,
+    MoxBoundary,
+    Percept,
+    describe_boundaries,
+    dominant_percept,
+    is_low_volatility_percept,
+    percepts_for,
+    perceptual_summary,
+    relevant_boundaries,
+    top_percepts,
+)
+from .provisional import (
+    build_provisional_chemical,
+    estimate_vapor_pressure_from_boiling_point,
+    slug,
+)
+from .search import exact_resolve, normalize_query, search_substances
+from .transport import (
+    N_A,
+    P_ATM,
+    R,
+    IncidentFluxInput,
+    concentration_at_distance,
+    delta_h_vap_trouton,
+    diffusion_coefficient_fuller,
+    diffusion_volume_from_mw,
+    evaporation_flux,
+    incident_flux,
+    incident_flux_proportional,
+    signal_ratio_vs_ref,
+    vapor_pressure_antoine,
+    vapor_pressure_clausius_clapeyron,
+)
+from .types import (
+    AntoineCoeffs,
+    ChainStep,
+    ChainValue,
+    Chemical,
+    ChemicalProperties,
+    Composite,
+    CompositeConstituent,
+    ConstituentVerdict,
+    CrossCheck,
+    FeasibilityVerdict,
+    Property,
+    ResolvedEntity,
+    SearchCandidate,
+)
+from .user_dictionary import (
+    read_user_dictionary,
+    remove_from_user_dictionary,
+    save_to_user_dictionary,
+    user_dictionary_by_id,
+)
+
+__all__ = [
+    "AMBIENT_TEMP_C",
+    "AMBIENT_TEMP_K",
+    "AntoineCoeffs",
+    "Band",
+    "CHAIN_STEP_IDS",
+    "CLASS_TERMS",
+    "COMPOSITE_BY_ID",
+    "COMPOSITES",
+    "COMPOUNDS",
+    "COMPOUND_BY_ID",
+    "ChainOptions",
+    "ChainStep",
+    "ChainValue",
+    "Chemical",
+    "ChemicalProperties",
+    "Composite",
+    "CompositeConstituent",
+    "ConstituentVerdict",
+    "CrossCheck",
+    "DEFAULT_DISTANCE_M",
+    "DEFAULT_SENSOR_COUNT",
+    "EffectiveVaporPressure",
+    "EnrichedBoilingPoint",
+    "EnrichedChemical",
+    "FeasibilityVerdict",
+    "Guidance",
+    "IncidentFluxInput",
+    "MAX_SUBSTANCES",
+    "MOX_BOUNDARIES",
+    "MOX_FLOOR_PPM",
+    "N_A",
+    "P_ATM",
+    "PERCEPTS",
+    "Property",
+    "R",
+    "REFERENCE_CHEMICAL_ID",
+    "REFERENCE_COMPOUND",
+    "ResolvedEntity",
+    "SENSOR_COUNT_OPTIONS",
+    "SearchCandidate",
+    "MoxBoundary",
+    "Percept",
+    "build_provisional_chemical",
+    "concentration_at_distance",
+    "delta_h_vap_trouton",
+    "describe_boundaries",
+    "diffusion_coefficient_fuller",
+    "diffusion_volume_from_mw",
+    "dominant_percept",
+    "effective_vapor_pressure",
+    "estimate_vapor_pressure_from_boiling_point",
+    "evaporation_flux",
+    "exact_resolve",
+    "extract_boiling_point_c",
+    "guidance",
+    "headspace_ppm_band",
+    "incident_flux",
+    "incident_flux_proportional",
+    "infer_functional_groups",
+    "is_low_volatility_percept",
+    "kekule_to_aromatic",
+    "lookup_pubchem",
+    "lookup_pubchem_boiling_point",
+    "normalize_query",
+    "parse_boiling_point",
+    "percepts_for",
+    "perceptual_summary",
+    "read_user_dictionary",
+    "relevant_boundaries",
+    "remove_from_user_dictionary",
+    "resolve_and_run",
+    "run_chemical_verdict",
+    "run_class_verdict",
+    "run_composite_verdict",
+    "run_constituent_chain",
+    "save_to_user_dictionary",
+    "search_substances",
+    "signal_band_label",
+    "signal_ratio_vs_ref",
+    "signal_score",
+    "slug",
+    "speed_from_volatility",
+    "top_percepts",
+    "user_dictionary_by_id",
+    "vapor_pressure_antoine",
+    "vapor_pressure_clausius_clapeyron",
+    "volatility_label",
+    "worst_verdict",
+]
+
+CHAIN_STEP_IDS = ("identity", "volatility", "signal", "reactivity")
