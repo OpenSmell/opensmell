@@ -1,7 +1,7 @@
 [project]
 name = "opensmell"
-version = "2.0.0"
-description = "OpenSmell SDK — extract device-agnostic framework features from electronic nose recordings"
+version = "3.0.0"
+description = "OpenSmell SDK — modular digital-olfaction framework: .osmell I/O, quality scoring, and sensor-specific feature extraction (MOX, MIRIS, electrochemical)"
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
@@ -14,5 +14,5 @@ dependencies = [
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["opensmell"]
+[tool.setuptools.packages.find]
+include = ["opensmell*"]

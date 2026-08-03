@@ -462,3 +462,88 @@ def feature_names():
     names.extend(["global_max_delta_ratio", "global_mean_delta_ratio",
                    "global_n_active_channels", "global_total_auc"])
     return names
+
+
+# ---------------------------------------------------------------------------
+# Ported kinetic features (web lib/osmell/processors.ts -> processMox).
+# Per-channel, array-driven: one feature row per declared channel.
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass
+from typing import List, Optional
+
+from .normalize import baseline_for_channel, channel_stats, normalized_series
+
+
+@dataclass
+class MoxFeatures:
+    channel: str
+    relative_amplitude: float
+    direction: int
+    rise_time_ms: Optional[float]
+    decay_time_ms: Optional[float]
+    auc: float
+    r0: float
+    dead: bool
+
+
+def _first_cross_time(time, norm, threshold):
+    for i in range(len(norm)):
+        if norm[i] >= threshold:
+            return time[i]
+    return None
+
+
+def process_mox(file) -> dict:
+    """Compute per-channel MOX kinetic features (web processMox parity)."""
+    channels = file.manifest.sensor.channels
+    features: List[MoxFeatures] = []
+    normalized = {}
+
+    for ch in channels:
+        cid = ch.id
+        values = file.data.get(cid, [])
+        r0 = baseline_for_channel(file, cid, values)[0]
+        stats = channel_stats(values, r0)
+        norm = normalized_series(values, r0)
+
+        finite_norm = [v for v in norm if v == v]
+        relative_amplitude = 0.0
+        direction = 1
+        auc = 0.0
+        rise_time_ms = None
+        decay_time_ms = None
+
+        if not stats.dead and finite_norm:
+            max_val = max(finite_norm)
+            min_val = min(finite_norm)
+            peak = max_val if abs(max_val) >= abs(min_val) else min_val
+            direction = 1 if peak >= 0 else -1
+            relative_amplitude = abs(peak)
+
+            span = max_val - min_val
+            t10 = _first_cross_time(file.time, norm, min_val + 0.1 * span)
+            t90 = _first_cross_time(file.time, norm, min_val + 0.9 * span)
+            if t10 is not None and t90 is not None:
+                rise_time_ms = t90 - t10
+
+            prev = norm[0]
+            for i in range(1, len(norm)):
+                dt = file.time[i] - file.time[i - 1]
+                if dt > 0:
+                    auc += (norm[i] + prev) * dt * 0.5
+                prev = norm[i]
+
+        normalized[cid] = norm
+        features.append(MoxFeatures(
+            channel=cid,
+            relative_amplitude=relative_amplitude,
+            direction=direction,
+            rise_time_ms=rise_time_ms,
+            decay_time_ms=decay_time_ms,
+            auc=auc,
+            r0=r0,
+            dead=stats.dead,
+        ))
+
+    return {"sensor_type": "mox", "features": features, "normalized": normalized}

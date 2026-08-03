@@ -1,11 +1,48 @@
+"""opensmell — digital olfaction SDK.
+
+v3 modular framework: sensor-agnostic interfaces at the top level
+(`io`, `csv`, `normalize`, `quality`, `features`) with sensor-specific
+implementations in `opensmell.mox` (and future `opensmell.miris`,
+`opensmell.electrochemical`). The MOX thermodynamic feasibility chain lives at
+`opensmell.mox.smellability`.
+
+Legacy v2 CSV-based API (`process`, `train`, `predict`, `extract_features`,
+`load_recording`, `SmellResult`) is preserved for backwards compatibility.
+"""
+
 import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 
 from . import features as _features
-from .preprocessing import load_csv, rs_r0_normalize, segment
+from .mox.preprocessing import load_csv, rs_r0_normalize, segment
 from .result import SmellResult
+
+# --- New v3 sensor-agnostic API ---
+from .csv import guess_sensor_type, parse_csv
+from .features import process_mox, run_processor
+from .io import (
+    build_osmell,
+    csv_from_file,
+    default_file_name,
+    parse_osmell,
+    parse_osmell_file,
+    write_osmell,
+)
+from .quality import compute_quality
+from .types import (
+    OSMELL_FORMAT_VERSION,
+    ChannelDescriptor,
+    ChannelStats,
+    OsmellFile,
+    OsmellManifest,
+    ParsedSample,
+    QualityReport,
+    SensorDescriptor,
+    SessionDescriptor,
+    SessionEvent,
+)
 
 
 def _feature_vector(feature_dict: dict) -> tuple:
@@ -30,6 +67,11 @@ def extract_features(filepath: str) -> tuple:
     arr = np.array(all_features)
     fnames = _features.feature_names()
     return arr, fnames
+
+
+def feature_names() -> list:
+    """Names of the MOX framework features (in extraction order)."""
+    return _features.feature_names()
 
 
 def process(filepath: str, model: Pipeline = None) -> SmellResult:
@@ -78,12 +120,38 @@ def predict(filepath: str, model: Pipeline) -> SmellResult:
     return process(filepath, model=model)
 
 
+# Backwards-compat alias for the .osmell loader.
+load_osmell = parse_osmell_file
+
 __all__ = [
     "extract_features",
+    "feature_names",
     "process",
     "train",
     "predict",
     "load_recording",
-    "feature_names",
     "SmellResult",
+    # v3 sensor-agnostic API
+    "parse_csv",
+    "guess_sensor_type",
+    "parse_osmell",
+    "parse_osmell_file",
+    "load_osmell",
+    "build_osmell",
+    "write_osmell",
+    "csv_from_file",
+    "default_file_name",
+    "compute_quality",
+    "run_processor",
+    "process_mox",
+    "OSMELL_FORMAT_VERSION",
+    "OsmellFile",
+    "OsmellManifest",
+    "SensorDescriptor",
+    "SessionDescriptor",
+    "ChannelDescriptor",
+    "SessionEvent",
+    "ParsedSample",
+    "ChannelStats",
+    "QualityReport",
 ]
