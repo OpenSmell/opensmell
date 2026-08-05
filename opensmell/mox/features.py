@@ -7,6 +7,23 @@ warnings.filterwarnings("ignore", message="Covariance of the parameters could no
 
 N_CHANNELS = 6
 
+NOMINAL_CALIBRATION = (1.0, -0.5)
+
+
+def _r0_from_contract(series, r0_samples, r0=None):
+    """R0 from the binding contract (§10.2): explicit R0, else median of the
+    first ``r0_samples`` finite samples; guard falls back to mean of positive
+    samples, then 1.0. Never returns NaN or a non-positive value."""
+    series = np.asarray(series, dtype=np.float64)
+    finite = series[np.isfinite(series)]
+    if r0 is None:
+        window = finite[:r0_samples] if r0_samples else finite
+        r0 = float(np.median(window)) if len(window) else 0.0
+    if not np.isfinite(r0) or r0 <= 0:
+        positive = finite[finite > 0]
+        r0 = float(np.mean(positive)) if len(positive) else 1.0
+    return r0 if r0 > 0 else 1.0
+
 
 def _exp_decay(t, a, tau, c):
     return a * np.exp(-t / tau) + c
@@ -20,24 +37,21 @@ def _tri_exp_decay(t, a1, tau1, a2, tau2, a3, tau3, c):
     return a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2) + a3 * np.exp(-t / tau3) + c
 
 
-def compute_channel_device_agnostic(series, r0_samples=15, sr=10):
+def compute_channel_device_agnostic(series, r0_samples=15, sr=10, r0=None):
     series = np.asarray(series, dtype=np.float64)
     if len(series) < r0_samples + 2:
         return {k: -1.0 for k in ["relative_amplitude", "direction", "rise_time",
                                    "decay_time", "auc", "endpoint_delta"]}
-    R0 = np.median(series[:r0_samples])
-    if R0 <= 0:
-        R0 = np.mean(series[series > 0]) if np.any(series > 0) else 1.0
-    if R0 <= 0 or np.isnan(R0):
-        return {k: -1.0 for k in ["relative_amplitude", "direction", "rise_time",
-                                   "decay_time", "auc", "endpoint_delta"]}
+    R0 = _r0_from_contract(series, r0_samples, r0)
 
-    std_ratio = np.std(series) / R0
-    dead = std_ratio < 0.001
+    finite = series[np.isfinite(series)]
+    std_ratio = float(np.std(finite) / R0) if len(finite) else float("inf")
+    dead = (len(finite) < 2) or (std_ratio < 0.001)
     if dead:
         return {"relative_amplitude": 0.0, "direction": 0,
                 "rise_time": -1.0, "decay_time": -1.0,
-                "auc": 0.0, "endpoint_delta": 0.0}
+                "auc": 0.0, "endpoint_delta": 0.0,
+                "R0": float(R0), "is_dead": True, "std_ratio": std_ratio}
 
     norm = (series - R0) / R0
     max_val, min_val = np.max(series), np.min(series)
@@ -110,15 +124,13 @@ def compute_channel_device_agnostic(series, r0_samples=15, sr=10):
     }
 
 
-def compute_channel_absolute(series, r0=None):
+def compute_channel_absolute(series, r0=None, a_const=1.0, b_const=-0.5):
     series = np.asarray(series, dtype=np.float64)
-    if r0 is None or r0 <= 0:
-        r0 = np.median(series[:15]) if len(series) >= 15 else np.mean(series)
-        r0 = max(r0, 1.0)
+    if r0 is None or not (np.isfinite(r0) and r0 > 0):
+        r0 = _r0_from_contract(series, 15, r0)
     raw_resistance = float(np.mean(series[-10:])) if len(series) >= 10 else float(np.mean(series))
     baseline_resistance = float(r0)
     voltage = float(raw_resistance)
-    a_const, b_const = 1.0, -0.5
     rr_ratio = raw_resistance / r0 if r0 > 0 else 0.0
     if b_const != 0 and rr_ratio > 0:
         calib_conc = ((rr_ratio / max(a_const, 0.001)) ** (1.0 / b_const))
@@ -166,15 +178,13 @@ def compute_channel_temporal(series, sr=10):
     }
 
 
-def compute_channel_health(series, r0_samples=15):
+def compute_channel_health(series, r0_samples=15, r0=None):
     series = np.asarray(series, dtype=np.float64)
     if len(series) < r0_samples + 5:
         return {"drift_rate": 0.0, "sensitivity_decay": 0.0,
                 "noise_floor": 0.0, "hysteresis": 0.0}
 
-    r0 = np.median(series[:r0_samples])
-    if r0 <= 0:
-        r0 = 1.0
+    r0 = _r0_from_contract(series, r0_samples, r0)
 
     drift_rate = float((np.mean(series[-10:]) - r0) / r0) if len(series) >= 10 else 0.0
     sensitivity_decay = 0.0
@@ -198,7 +208,7 @@ def compute_channel_health(series, r0_samples=15):
     }
 
 
-def compute_multi_exp_decay(series, peak_idx=None, sr=10, n_components=2):
+def compute_multi_exp_decay(series, peak_idx=None, sr=10, n_components=2, r0=None):
     """Fit multi-exponential decay constants to the recovery phase.
 
     The default model is bi-exponential (fast + slow components):
@@ -233,7 +243,7 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10, n_components=2):
                 "a1": -1.0, "a2": -1.0, "a3": -1.0, "cost": -1.0}
 
     if peak_idx is None:
-        R0_est = np.median(series[:min(15, len(series)//3)])
+        R0_est = _r0_from_contract(series, min(15, len(series) // 3), r0)
         peak_idx = np.argmax(np.abs(series - R0_est))
     peak_idx = max(5, min(peak_idx, len(series) - 10))
 
@@ -300,7 +310,7 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10, n_components=2):
     return results
 
 
-def compute_saturation_index(series, r0_samples=15):
+def compute_saturation_index(series, r0_samples=15, r0=None):
     """Compute how close the sensor response is to its estimated saturation capacity.
 
     Saturation index = observed response / estimated saturation response.
@@ -318,9 +328,7 @@ def compute_saturation_index(series, r0_samples=15):
     if len(series) < r0_samples + 5:
         return 0.0
 
-    R0 = np.median(series[:r0_samples])
-    if R0 <= 0:
-        return 0.0
+    R0 = _r0_from_contract(series, r0_samples, r0)
 
     norm = np.abs(series - R0) / R0
     current_response = float(np.max(norm))
@@ -329,7 +337,8 @@ def compute_saturation_index(series, r0_samples=15):
     if current_response < noise_floor * 2:
         return 0.0
 
-    saturation = min(1.0, current_response / (current_response + noise_floor * 10))
+    denom = current_response + noise_floor * 10
+    saturation = min(1.0, current_response / denom) if denom > 0 else 0.0
     return float(saturation)
 
 
@@ -355,7 +364,7 @@ def compute_channel_hardware(series):
     }
 
 
-def extract_all_framework_features(data, r0_samples=15, sr=10):
+def extract_all_framework_features(data, r0_samples=15, sr=10, r0_per_channel=None, calibration=None):
     data = np.asarray(data, dtype=np.float64)
     if data.ndim == 1:
         data = data.reshape(-1, 1)
@@ -373,27 +382,34 @@ def extract_all_framework_features(data, r0_samples=15, sr=10):
     for ch in range(n_ch):
         series = data[:, ch]
 
-        da = compute_channel_device_agnostic(series, r0_samples, sr)
+        R0 = _r0_from_contract(series, r0_samples, (r0_per_channel or {}).get(ch))
+        da = compute_channel_device_agnostic(series, r0_samples, sr, R0)
         device_agnostic_results.append(da)
-        R0 = da.get("R0", 1.0)
+        R0 = da.get("R0", R0)
 
-        ab = compute_channel_absolute(series, r0=R0)
+        a_c, b_c = NOMINAL_CALIBRATION
+        if calibration:
+            cal = calibration.get(ch)
+            if cal:
+                a_c = cal.get("a", NOMINAL_CALIBRATION[0])
+                b_c = cal.get("b", NOMINAL_CALIBRATION[1])
+        ab = compute_channel_absolute(series, r0=R0, a_const=a_c, b_const=b_c)
         absolute_results.append(ab)
 
         te = compute_channel_temporal(series, sr)
         temporal_results.append(te)
 
-        he = compute_channel_health(series, r0_samples)
+        he = compute_channel_health(series, r0_samples, R0)
         health_results.append(he)
 
         ha = compute_channel_hardware(series)
         hardware_results.append(ha)
 
         pk = da.get("peak_idx", len(series) // 2)
-        dec = compute_multi_exp_decay(series, peak_idx=pk, sr=sr)
+        dec = compute_multi_exp_decay(series, peak_idx=pk, sr=sr, r0=R0)
         decay_results.append(dec)
 
-        sat = compute_saturation_index(series, r0_samples)
+        sat = compute_saturation_index(series, r0_samples, R0)
         features[f"ch{ch}_advanced_saturation_index"] = sat
 
         for feat_name in ["relative_amplitude", "direction", "rise_time",
@@ -493,7 +509,20 @@ def feature_names():
 from dataclasses import dataclass
 from typing import List, Optional
 
-from .normalize import baseline_for_channel, channel_stats, normalized_series
+from ..types import DEFAULT_R0_SAMPLES
+from .normalize import baseline_for_channel, channel_stats, normalized_series, std
+
+
+def calibration_for_channel(manifest, channel_id):
+    """Return (a, b, source) for a channel from the manifest `sensor.calibration`
+    contract (§10.10). Falls back to nominal defaults with source
+    ``"nominal-default"`` — never silently: callers can see which path was used."""
+    sensor = getattr(manifest, "sensor", None)
+    cal = getattr(sensor, "calibration", None) or {}
+    entry = cal.get(channel_id)
+    if entry is not None and entry.a > 0 and entry.b != 0:
+        return entry.a, entry.b, "manifest"
+    return NOMINAL_CALIBRATION[0], NOMINAL_CALIBRATION[1], "nominal-default"
 
 
 @dataclass
@@ -506,6 +535,8 @@ class MoxFeatures:
     auc: float
     r0: float
     dead: bool
+    endpoint_delta: float
+    saturation_index: float
 
 
 def _first_cross_time(time, norm, threshold):
@@ -515,9 +546,54 @@ def _first_cross_time(time, norm, threshold):
     return None
 
 
+def _argmax_abs(norm):
+    best = 0
+    for i in range(1, len(norm)):
+        if abs(norm[i]) > abs(norm[best]):
+            best = i
+    return best
+
+
+def _decay_time_ms_after(norm, time, peak_idx):
+    if len(norm) - peak_idx <= 2:
+        return None
+    pk = norm[peak_idx]
+    if not (pk == pk) or pk == 0:
+        return None
+    t90 = 0.9 * pk
+    t10 = 0.1 * pk
+    near_peak = (lambda v: v >= t90) if pk >= 0 else (lambda v: v <= t90)
+    near_baseline = (lambda v: v <= t10) if pk >= 0 else (lambda v: v >= t10)
+    si = -1
+    for i in range(peak_idx, len(norm)):
+        if near_peak(norm[i]):
+            si = i
+            break
+    if si < 0:
+        return None
+    for i in range(si, len(norm)):
+        if near_baseline(norm[i]):
+            return time[i] - time[peak_idx]
+    return None
+
+
+def _saturation_index_for(norm, r0_samples):
+    if len(norm) < r0_samples + 5:
+        return 0.0
+    r0_norm = norm[:r0_samples]
+    current_response = max((abs(v) for v in norm), default=0.0)
+    noise_floor = std(r0_norm)
+    if noise_floor != noise_floor or current_response < noise_floor * 2:
+        return 0.0
+    return min(1.0, current_response / (current_response + noise_floor * 10))
+
+
 def process_mox(file) -> dict:
     """Compute per-channel MOX kinetic features (web processMox parity)."""
     channels = file.manifest.sensor.channels
+    baseline = file.manifest.baseline
+    r0_samples = (baseline.r0_samples if baseline and baseline.r0_samples
+                  else DEFAULT_R0_SAMPLES)
     features: List[MoxFeatures] = []
     normalized = {}
 
@@ -534,6 +610,8 @@ def process_mox(file) -> dict:
         auc = 0.0
         rise_time_ms = None
         decay_time_ms = None
+        endpoint_delta = 0.0
+        saturation_index = 0.0
 
         if not stats.dead and finite_norm:
             max_val = max(finite_norm)
@@ -555,6 +633,11 @@ def process_mox(file) -> dict:
                     auc += (norm[i] + prev) * dt * 0.5
                 prev = norm[i]
 
+            peak_idx = _argmax_abs(norm)
+            decay_time_ms = _decay_time_ms_after(norm, file.time, peak_idx)
+            endpoint_delta = norm[-1]
+            saturation_index = _saturation_index_for(norm, r0_samples)
+
         normalized[cid] = norm
         features.append(MoxFeatures(
             channel=cid,
@@ -565,6 +648,8 @@ def process_mox(file) -> dict:
             auc=auc,
             r0=r0,
             dead=stats.dead,
+            endpoint_delta=endpoint_delta,
+            saturation_index=saturation_index,
         ))
 
     return {"sensor_type": "mox", "features": features, "normalized": normalized}

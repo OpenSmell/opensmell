@@ -8,7 +8,7 @@ files round-trip between the Python and TypeScript implementations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 OSMELL_FORMAT_VERSION = "1.0.0"
 
@@ -67,6 +67,37 @@ class DeviceDescriptor:
 
 
 @dataclass
+class CalibrationDescriptor:
+    a: float
+    b: float
+    reference_substance: Optional[str] = None
+    reference_ppm: Optional[float] = None
+    date: Optional[str] = None
+    method: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in {
+            "a": self.a,
+            "b": self.b,
+            "referenceSubstance": self.reference_substance,
+            "referencePpm": self.reference_ppm,
+            "date": self.date,
+            "method": self.method,
+        }.items() if v is not None}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CalibrationDescriptor":
+        return cls(
+            a=float(d["a"]),
+            b=float(d["b"]),
+            reference_substance=d.get("referenceSubstance"),
+            reference_ppm=d.get("referencePpm"),
+            date=d.get("date"),
+            method=d.get("method"),
+        )
+
+
+@dataclass
 class SensorDescriptor:
     sensor_type: str = "mox"
     channels: List[ChannelDescriptor] = field(default_factory=list)
@@ -75,6 +106,7 @@ class SensorDescriptor:
     adc_bits: Optional[int] = None
     adc_max: Optional[int] = None
     time_column: str = "timestamp_ms"
+    calibration: Optional[Dict[str, CalibrationDescriptor]] = None
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {
@@ -90,11 +122,14 @@ class SensorDescriptor:
         }.items():
             if v is not None:
                 d[k] = v
+        if self.calibration:
+            d["calibration"] = {cid: c.to_dict() for cid, c in self.calibration.items()}
         d["timeColumn"] = self.time_column
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "SensorDescriptor":
+        calibration = d.get("calibration")
         return cls(
             sensor_type=d.get("sensorType", "mox"),
             channels=[ChannelDescriptor.from_dict(c) for c in d.get("channels", [])],
@@ -103,6 +138,8 @@ class SensorDescriptor:
             adc_bits=d.get("adcBits"),
             adc_max=d.get("adcMax"),
             time_column=d.get("timeColumn", "timestamp_ms"),
+            calibration=({cid: CalibrationDescriptor.from_dict(c) for cid, c in calibration.items()}
+                         if calibration else None),
         )
 
 

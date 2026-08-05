@@ -33,6 +33,7 @@ from .io import (
 from .quality import compute_quality
 from .types import (
     OSMELL_FORMAT_VERSION,
+    CalibrationDescriptor,
     ChannelDescriptor,
     ChannelStats,
     OsmellFile,
@@ -154,4 +155,5 @@ __all__ = [
     "ParsedSample",
     "ChannelStats",
     "QualityReport",
+    "CalibrationDescriptor",
 ]
