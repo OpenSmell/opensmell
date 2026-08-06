@@ -16,6 +16,23 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 
 from . import features as _features
+from .calibration import (
+    CalibrationError,
+    build_calibration_payload,
+    concentration_series,
+    fit_power_law,
+    invert_concentration,
+    loocv_power_law,
+    normed_to_rr,
+    two_point_calibration,
+)
+from .hardware import (
+    HardwareInsufficiencyWarning,
+    check_rig_sufficiency,
+    effective_dims,
+    implied_channels,
+    min_effective_dimensions,
+)
 from .mox.preprocessing import load_csv, rs_r0_normalize, segment
 from .result import SmellResult
 
@@ -52,13 +69,7 @@ def _feature_vector(feature_dict: dict) -> tuple:
     return np.array(values, dtype=np.float32), keys
 
 
-def load_recording(filepath: str) -> np.ndarray:
-    raw = load_csv(filepath)
-    return rs_r0_normalize(raw)
-
-
-def extract_features(filepath: str) -> tuple:
-    normed = load_recording(filepath)
+def _features_from_normed(normed: np.ndarray) -> tuple:
     segments = segment(normed)
     all_features = []
     for seg in segments:
@@ -70,13 +81,25 @@ def extract_features(filepath: str) -> tuple:
     return arr, fnames
 
 
+def load_recording(filepath: str) -> np.ndarray:
+    raw = load_csv(filepath)
+    return rs_r0_normalize(raw)
+
+
+def extract_features(filepath: str) -> tuple:
+    return _features_from_normed(load_recording(filepath))
+
+
 def feature_names() -> list:
     """Names of the MOX framework features (in extraction order)."""
     return _features.feature_names()
 
 
 def process(filepath: str, model: Pipeline = None) -> SmellResult:
-    features_arr, fnames = extract_features(filepath)
+    normed = load_recording(filepath)
+    if model is not None:
+        check_rig_sufficiency(normed.shape[1], model)
+    features_arr, fnames = _features_from_normed(normed)
     if features_arr.shape[0] == 0:
         return SmellResult(features=np.array([]), feature_names=fnames, n_windows=0)
     avg_features = features_arr.mean(axis=0)
@@ -114,6 +137,9 @@ def train(X: np.ndarray, y: np.ndarray, n_estimators: int = 200) -> Pipeline:
         )),
     ])
     model.fit(X, y)
+    n_ch = implied_channels(X.shape[1])
+    if n_ch is not None:
+        model.min_effective_dimensions = effective_dims(n_ch)
     return model
 
 
@@ -132,6 +158,21 @@ __all__ = [
     "predict",
     "load_recording",
     "SmellResult",
+    # Reference-point calibration (§4.6, §10.10)
+    "CalibrationError",
+    "two_point_calibration",
+    "fit_power_law",
+    "invert_concentration",
+    "loocv_power_law",
+    "build_calibration_payload",
+    "concentration_series",
+    "normed_to_rr",
+    # Hardware sufficiency gate (§10.10 N→M limit)
+    "HardwareInsufficiencyWarning",
+    "check_rig_sufficiency",
+    "effective_dims",
+    "min_effective_dimensions",
+    "implied_channels",
     # v3 sensor-agnostic API
     "parse_csv",
     "guess_sensor_type",
