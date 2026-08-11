@@ -45,9 +45,42 @@ def test_parse_csv_sorts_unsorted_rows():
     assert [s.time for s in parsed.samples] == [100, 200, 300]
 
 
-def test_parse_csv_rejects_missing_time_column():
-    with pytest.raises(ValueError, match="time column"):
-        o.parse_csv("VOC,Alcohol\n100,200\n")
+def test_parse_csv_missing_time_column_uses_synthetic_timing():
+    parsed = o.parse_csv("VOC,Alcohol\n100,200\n110,210\n")
+    assert parsed.time_source == "synthetic"
+    assert parsed.time_column is None
+    assert parsed.synthetic_rate_hz == 10.0
+    assert parsed.guess_sampling_rate_hz == 10.0
+    assert parsed.samples[0].time == 0.0
+    assert parsed.samples[1].time == 100.0
+    assert [w.lower() for w in parsed.warnings if "synthesized" in w.lower()]
+
+
+def test_parse_csv_recognizes_time_aliases():
+    parsed = o.parse_csv("timestamp,VOC\n0,100\n")
+    assert parsed.time_source == "column"
+    assert parsed.time_column == "timestamp"
+
+
+def test_parse_csv_classifies_context_columns():
+    parsed = o.parse_csv(
+        "NO2,C2H5OH,VOC,CO,Alcohol,LPG,Benzene,Temperature,Pressure,Humidity,"
+        "Gas_Resistance,Altitude\n"
+        "153,188,434,771,1,18,0,24.73,1007.1,29.79,290.6,82.45\n"
+        "152,188,432,771,1,18,0,24.74,1007.1,29.9,291.37,82.45\n"
+    )
+    assert parsed.channel_ids == ["NO2", "C2H5OH", "VOC", "CO", "Alcohol", "LPG", "Benzene"]
+    assert parsed.context_columns == [
+        "Temperature", "Pressure", "Humidity", "Gas_Resistance", "Altitude",
+    ]
+    assert parsed.time_source == "synthetic"
+
+
+def test_parse_csv_skips_non_numeric_columns():
+    parsed = o.parse_csv("timestamp_ms,VOC,note\n0,100,hello\n100,110,world\n")
+    assert parsed.channel_ids == ["VOC"]
+    assert parsed.skipped_columns == ["note"]
+    assert "note" in parsed.warnings[0]
 
 
 def test_parse_csv_quoted_fields():

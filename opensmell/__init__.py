@@ -53,6 +53,13 @@ del _sys
 # --- New v3 sensor-agnostic API ---
 from .csv import guess_sensor_type, parse_csv
 from .features import process_mox, run_processor
+from .ingest import (
+    IngestedCollection,
+    IngestedSession,
+    build_osmell_file,
+    ingest_file,
+    ingest_folder,
+)
 from .io import (
     build_osmell,
     csv_from_file,
@@ -190,6 +197,11 @@ __all__ = [
     # v3 sensor-agnostic API
     "parse_csv",
     "guess_sensor_type",
+    "ingest_file",
+    "ingest_folder",
+    "build_osmell_file",
+    "IngestedSession",
+    "IngestedCollection",
     "parse_osmell",
     "parse_osmell_file",
     "load_osmell",

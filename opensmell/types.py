@@ -13,6 +13,23 @@ from typing import Any, Dict, List, Optional
 OSMELL_FORMAT_VERSION = "1.0.0"
 
 TIME_COLUMNS = ("timestamp_ms", "elapsed_ms")
+# Broader set of accepted time-column names for tolerant CSV import. Column
+# names are matched case-insensitively. `synthetic_index` is written by the
+# converter when an imported CSV had no time column, so the resulting .osmell
+# round-trips with an explicit, self-describing timing column.
+TIME_COLUMN_ALIASES = (
+    "timestamp_ms", "elapsed_ms", "timestamp", "elapsed",
+    "time_ms", "time_s", "time", "synthetic_index",
+)
+# Timing assumed for CSVs with no time column. Kept visible and honest: the
+# manifest records `timeSource: "synthetic"` and the quality report surfaces a
+# note so no one mistakes synthesized timing for measured timing.
+DEFAULT_SYNTHETIC_RATE_HZ = 10.0
+# Environmental/context columns are detected and preserved (never scored as
+# sensor channels, so they cannot corrupt feature or quality statistics).
+CONTEXT_COLUMN_HINTS = (
+    "temperature", "pressure", "humidity", "gas_res", "resistance", "altitude",
+)
 SENSOR_TYPES = ("mox", "miris", "electrochemical", "other", "unknown")
 SESSION_ROLES = ("baseline", "exposure", "single")
 BASELINE_SOURCES = ("explicit", "auto", "none")
@@ -265,7 +282,7 @@ class OsmellFile:
 @dataclass
 class ParsedSample:
     time: float
-    values: dict[str, float]
+    values: dict[str, Optional[float]]
 
 
 @dataclass

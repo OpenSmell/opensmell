@@ -30,6 +30,16 @@ def compute_quality(
             unsorted=unsorted,
             non_finite=non_finite,
         )
+    if sensor_type == "unknown":
+        # Adopt-don't-reject: unidentifiable arrays (e.g. MQ-series) still get
+        # the device-agnostic score instead of failing ingestion.
+        return compute_quality_mox(
+            file,
+            sample_count=sample_count,
+            guess_sampling_rate_hz=guess_sampling_rate_hz,
+            unsorted=unsorted,
+            non_finite=non_finite,
+        )
     if sensor_type in ("miris", "electrochemical"):
         raise NotImplementedError(
             f"No quality scorer registered for sensor type '{sensor_type}'. "
