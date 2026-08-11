@@ -482,12 +482,25 @@ def run_chemical_verdict(chemical: Chemical, opts: Optional[ChainOptions] = None
     )
 
 
-def run_composite_verdict(composite: Composite, opts: Optional[ChainOptions] = None) -> FeasibilityVerdict:
+def run_composite_verdict(
+    composite: Composite,
+    opts: Optional[ChainOptions] = None,
+    constituent_chemicals: Optional[dict] = None,
+) -> FeasibilityVerdict:
+    """Composite verdict over the catalogue, plus any caller-supplied chemicals.
+
+    `constituent_chemicals` maps a constituent's `chemical_id` to a `Chemical`
+    (e.g. one built from SMILES via `chemical_from_smiles`) so a mixture whose
+    members are not in the curated catalogue can still be graded. Backwards
+    compatible: when omitted, only catalogue compounds participate.
+    """
     opts = opts or ChainOptions()
     sensor_count = opts.sensor_count if opts.sensor_count is not None else DEFAULT_SENSOR_COUNT
     constituents: List[ConstituentVerdict] = []
     for c in composite.constituents:
         chemical = COMPOUND_BY_ID.get(c.chemical_id)
+        if chemical is None and constituent_chemicals:
+            chemical = constituent_chemicals.get(c.chemical_id)
         if chemical is None:
             continue
         v = run_constituent_chain(chemical)

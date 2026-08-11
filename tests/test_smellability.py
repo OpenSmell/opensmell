@@ -572,3 +572,77 @@ class TestStructureInInference:
     def test_joback_parity_cases(self, label, smiles, mw, tb_k):
         assert estimate_molecular_weight(smiles) == pytest.approx(mw, abs=0.01)
         assert joback_boiling_point_k(smiles) == pytest.approx(tb_k, abs=0.05)
+
+
+# ---------------------------------------------------------------- SDK wiring
+# The feasibility chain must be reachable from `opensmell.smellability` (re-export)
+# and the CLI must accept a name, a SMILES string, and a mixture of the two.
+
+class TestSdkWiring:
+    def test_smellability_re_exported_at_top_level(self):
+        import opensmell
+
+        assert hasattr(opensmell, "smellability")
+        from opensmell.smellability import resolve_and_run
+
+        assert resolve_and_run("ethanol", "chemical") is not None
+
+    def test_cli_grades_ethanol(self, capsys):
+        from scripts.smellability_lookup import main
+
+        assert main(["ethanol"]) == 0
+        out = capsys.readouterr().out
+        assert "VERDICT      GREEN" in out
+
+    def test_cli_grades_smiles_co2_red(self, capsys):
+        from scripts.smellability_lookup import main
+
+        assert main(["--smiles", "O=C=O"]) == 0
+        assert "VERDICT      RED" in capsys.readouterr().out
+
+    def test_cli_unresolved_query_returns_2(self, capsys):
+        from scripts.smellability_lookup import main
+
+        assert main(["zzzz-not-a-real-substance"]) == 2
+        assert "no matches" in capsys.readouterr().out
+
+    def test_cli_mix_with_inferred_constituent(self):
+        from scripts.smellability_lookup import build_mix_verdict
+        from opensmell.smellability import ChainOptions
+
+        verdict = build_mix_verdict([("ethanol", 0.5), ("O=C=O", 0.5)], ChainOptions(sensor_count=6))
+        assert verdict.verdict == "yellow"
+        names = [c.name for c in verdict.constituents]
+        assert "Ethanol" in names and "O=C=O" in names
+
+    def test_composite_over_inferred_constituent(self):
+        from opensmell.smellability import (
+            COMPOUND_BY_ID,
+            Composite,
+            CompositeConstituent,
+            Property,
+            chemical_from_smiles,
+            run_composite_verdict,
+        )
+
+        ethanol = COMPOUND_BY_ID["ethanol"]
+        co2 = chemical_from_smiles("O=C=O")
+        comp = Composite(
+            id="test-mix",
+            name="test mix",
+            kind="other",
+            synonyms=[],
+            constituents=[
+                CompositeConstituent(
+                    chemical_id=ethanol.id,
+                    weight_fraction=Property(value=0.1, source="estimated"),
+                ),
+                CompositeConstituent(
+                    chemical_id=co2.id,
+                    weight_fraction=Property(value=0.9, source="estimated"),
+                ),
+            ],
+            source_refs=["test"],
+        )
+        v = run_composite_verdict(comp, constituent_chemicals={ethanol.id: ethanol, co2.id: co2})
+        assert v.verdict == "red"

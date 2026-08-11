@@ -8,6 +8,10 @@ implementations in `opensmell.mox` (and future `opensmell.miris`,
 
 Legacy v2 CSV-based API (`process`, `train`, `predict`, `extract_features`,
 `load_recording`, `SmellResult`) is preserved for backwards compatibility.
+
+The feasibility chain is re-exported at the top level as `opensmell.smellability`
+so `resolve_and_run`, `chemical_from_smiles`, and the verdicts are reachable
+without importing the internals.
 """
 
 import numpy as np
@@ -35,6 +39,16 @@ from .hardware import (
 )
 from .mox.preprocessing import load_csv, rs_r0_normalize, segment
 from .result import SmellResult
+
+# --- MOX thermodynamic feasibility chain (Smellability) ---
+from .mox import smellability
+
+# Register the re-export as a real dotted path so `import opensmell.smellability`
+# (and `from opensmell.smellability import ...`) works, not just attribute access.
+import sys as _sys
+
+_sys.modules[__name__ + ".smellability"] = smellability
+del _sys
 
 # --- New v3 sensor-agnostic API ---
 from .csv import guess_sensor_type, parse_csv
@@ -186,6 +200,8 @@ __all__ = [
     "compute_quality",
     "run_processor",
     "process_mox",
+    # MOX thermodynamic feasibility chain (Smellability)
+    "smellability",
     "OSMELL_FORMAT_VERSION",
     "OsmellFile",
     "OsmellManifest",
