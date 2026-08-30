@@ -4,6 +4,8 @@ from typing import Optional
 
 SENSOR_NAMES = ["NO2", "C2H5OH", "VOC", "CO", "Alcohol", "LPG"]
 
+MQ6_COLS = ["MQ135", "MQ3", "MQ6", "MQ7", "MQ4", "MQ8"]
+
 WINDOW_SIZE = 100
 WINDOW_STRIDE = 10
 
@@ -24,6 +26,9 @@ def detect_sensor_columns(df: pd.DataFrame):
         fallback = [c for c in df.columns if c.lower().startswith("sensor_")]
         if len(fallback) >= 6:
             return fallback[:6]
+        mq = [c for c in df.columns if c.lower() in [m.lower() for m in MQ6_COLS]]
+        if len(mq) >= 6:
+            return mq[:6]
     return cols
 
 
@@ -43,8 +48,20 @@ def load_csv(filepath: str, sensor_map: Optional[dict] = None):
     return df[cols].values.astype(np.float64)
 
 
-def expand_channels(arr: np.ndarray, n_target: int = 6) -> np.ndarray:
+def expand_channels(arr: np.ndarray, n_target: int = 6, mapping=None) -> np.ndarray:
+    """Expand an N-channel array to ``n_target`` channels.
+
+    Without ``mapping`` this pads/truncates channel-wise. The legacy firmware
+    contract passes ``mapping`` as a list of ``(source, target)`` pairs (e.g.
+    ``FW_MAPPING``) so a 3-sensor rig's columns are copied into the 6-channel
+    layout the framework expects.
+    """
     out = np.zeros((arr.shape[0], n_target), dtype=np.float64)
+    if mapping is not None:
+        for source, target in mapping:
+            if source < arr.shape[1] and target < n_target:
+                out[:, target] = arr[:, source]
+        return out
     for i in range(min(arr.shape[1], n_target)):
         out[:, i] = arr[:, i]
     return out

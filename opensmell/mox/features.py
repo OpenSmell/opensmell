@@ -105,7 +105,7 @@ def compute_channel_device_agnostic(series, r0_samples=15, sr=10, r0=None):
             if len(end_candidates) > 0:
                 decay_time = (si + end_candidates[0]) / sr
 
-    auc = float(np.trapezoid(np.abs(norm)))
+    auc = float(np.trapz(np.abs(norm)))
     endpoint_delta = float((series[-1] - R0) / R0)
 
     return {
@@ -194,8 +194,8 @@ def compute_channel_health(series, r0_samples=15, r0=None):
     if peak_idx < len(series) - 5 and peak_idx > 5:
         ads_curve = series[:peak_idx + 1]
         des_curve = series[peak_idx:]
-        ads_path = np.trapezoid(np.abs(ads_curve - r0))
-        des_path = np.trapezoid(np.abs(des_curve - r0))
+        ads_path = np.trapz(np.abs(ads_curve - r0))
+        des_path = np.trapz(np.abs(des_curve - r0))
         hysteresis = float(abs(ads_path - des_path) / max(ads_path, 1e-10))
     else:
         hysteresis = 0.0
