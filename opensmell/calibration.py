@@ -30,9 +30,11 @@ from __future__ import annotations
 
 import math
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import numpy as np
+
+from .constants import UnknownSensorError, power_law
 
 
 class CalibrationError(ValueError):
@@ -229,3 +231,83 @@ def concentration_series(normed, params: Dict[int, tuple]) -> np.ndarray:
         if 0 <= ch < rr.shape[1]:
             out[:, ch] = invert_concentration(rr[:, ch], a, b)
     return out
+
+
+def calibrate_quick(sensor: str, gas: str, channel: str = "ch0",
+                    reference_ppm: Optional[float] = None,
+                    override: Optional[Dict[str, float]] = None) -> dict:
+    """Datasheet-derived single-channel calibration (no measured points).
+
+    Looks up the converted ``(a, b)`` power-law constants for the given
+    ``sensor`` model responding to ``gas`` from the embedded ``sensors.json``
+    (§10.10). It is a *starting point* for quantification, not a substitute for
+    measured reference points: the constants are single-reference-substance
+    datasheet estimates that do not transfer across rigs (§4.6).
+
+    ``override`` may supply ``{"a": ..., "b": ...}`` to adjust the tabulated
+    values for a specific rig. Returns a one-channel ``sensor.calibration``
+    payload conforming to ``CalibrationDescriptor.from_dict``.
+    """
+    if override is None:
+        override = {}
+    try:
+        params = dict(power_law(sensor, gas))
+    except UnknownSensorError:
+        raise
+    params.update(override)
+    b = float(params["b"])
+    a = float(params["a"])
+    if a <= 0 or b == 0:
+        raise CalibrationError(
+            f"`calibrate_quick` requires a > 0 and b != 0 for a usable power law; "
+            f"got (a={a}, b={b}) sensor={sensor} gas={gas}.")
+    payload = {
+        "a": a,
+        "b": b,
+        "referenceSubstance": gas,
+        "date": date.today().isoformat(),
+        "method": "datasheet",
+    }
+    if reference_ppm is not None:
+        payload["referencePpm"] = float(reference_ppm)
+    return {channel: payload}
+
+
+def calibrate_precise(sensor: str, gas: str, rr, c,
+                      channel: str = "ch0",
+                      reference_ppm: Optional[float] = None) -> dict:
+    """Measured multi-point power-law calibration wrapper (§4.6).
+
+    Fits ``(a, b)`` in log-log space from measured ``(rr, C)`` reference points
+    (reusing ``fit_power_law``), reports LOOCV falsification (``loocv_power_law``),
+    and returns both a ``sensor.calibration`` payload (for ``CalibrationDescriptor``)
+    and the full fit + diagnostics under ``"diagnostics"``.
+
+    ``sensor``/``gas`` are descriptive metadata; the ``(a, b)`` come entirely
+    from the measured points, never from the datasheet table.
+    """
+    fit = fit_power_law(rr, c)
+    loocv = loocv_power_law(rr, c)
+    if reference_ppm is None:
+        reference_ppm = math.sqrt(max(fit.get("min_ppm", 1.0), 1.0)
+                                  * max(fit.get("max_ppm", 1.0), 1.0))
+    payload = {
+        channel: {
+            "a": fit["a"],
+            "b": fit["b"],
+            "referenceSubstance": gas,
+            "referencePpm": float(reference_ppm),
+            "date": date.today().isoformat(),
+            "method": "multi-point-loglog",
+        }
+    }
+    return {
+        "channel": channel,
+        "sensor": sensor,
+        "gas": gas,
+        "calibration": payload,
+        "diagnostics": {key: fit[key] for key in (
+            "a", "b", "r2", "rmse_log_rr", "n_points", "min_ppm",
+            "max_ppm", "decades", "method")},
+        "loocv": loocv,
+    }

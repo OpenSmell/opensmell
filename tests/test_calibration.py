@@ -14,12 +14,24 @@ import opensmell
 from opensmell.calibration import (
     CalibrationError,
     build_calibration_payload,
+    calibrate_precise,
+    calibrate_quick,
     concentration_series,
     fit_power_law,
     invert_concentration,
     loocv_power_law,
     normed_to_rr,
     two_point_calibration,
+)
+from opensmell.constants import (
+    UnknownSensorError,
+    all_power_laws,
+    clean_air_ratio,
+    is_power_law_sensor,
+    power_law,
+    sensor_gases,
+    sensor_models,
+    sensor_sources,
 )
 from opensmell.types import CalibrationDescriptor
 
@@ -136,5 +148,158 @@ def test_module_exports():
     for name in ("two_point_calibration", "fit_power_law",
                  "invert_concentration", "loocv_power_law",
                  "build_calibration_payload", "concentration_series",
+                 "calibrate_quick", "calibrate_precise",
                  "CalibrationError"):
         assert hasattr(opensmell, name), f"missing top-level export {name}"
+
+
+# --- constants table ---
+
+
+def test_sensor_models_cover_common_mq():
+    models = sensor_models()
+    for m in ("MQ-2", "MQ-3", "MQ-4", "MQ-5", "MQ-6", "MQ-7", "MQ-8",
+              "MQ-9", "MQ-135", "MQ-136", "MQ-131", "MQ-303A", "MQ-309A"):
+        assert m in models, f"missing {m}"
+
+
+def test_clean_air_ratio_present_and_positive():
+    for m in sensor_models():
+        if is_power_law_sensor(m):
+            assert clean_air_ratio(m) > 0, m
+
+
+def test_power_law_convention_roundtrips():
+    # SDK: rr = a*C^b, C = (rr/a)^(1/b). Datasheet (MQUnified): C = a_u*rr^b_u.
+    # Verify conversion consistency at a representative response.
+    for m in sensor_models():
+        if not is_power_law_sensor(m):
+            continue  # relative-response MEMS channels have no gases table
+        for gas, ab in all_power_laws(m).items():
+            a, b = ab["a"], ab["b"]
+            assert a > 0, (m, gas)
+            assert b != 0, (m, gas)
+            # pick a mid-range rr and confirm invert returns a finite C
+            rr = max(2.0, a * 100.0 ** b)
+            C = invert_concentration(rr, a, b)
+            assert np.isfinite(C)
+            assert np.allclose(a * C ** b, rr, rtol=1e-3), (m, gas)
+
+
+def test_power_law_unknown_sensor():
+    with pytest.raises(UnknownSensorError):
+        power_law("MQ-999", "CO")
+    with pytest.raises(UnknownSensorError):
+        sensor_gases("NOPE")
+
+
+def test_power_law_unknown_gas_keyerror():
+    assert "CO" in sensor_gases("MQ-135")
+    with pytest.raises(KeyError):
+        power_law("MQ-136", "nonsense_gas")
+
+
+def test_mq2_lpg_matches_known_datapoint():
+    # Sanity anchor: converted MQ-2 LPG constants verified visually earlier.
+    ab = power_law("MQ-2", "LPG")
+    assert ab["a"] == pytest.approx(17.447, rel=1e-3)
+    assert ab["b"] == pytest.approx(-0.450, rel=1e-2)
+
+
+# --- sources & non-power-law (MEMS) entries ---
+
+
+def test_sources_present_for_all_mq_sensors():
+    for model in sensor_models():
+        src = sensor_sources(model)
+        assert isinstance(src, list), model
+        # every entry must carry at least one verification link
+        assert len(src) >= 1, model
+        assert all(s.startswith("http") for s in src), model
+
+
+def test_mq_sources_point_to_mqsensorslib():
+    # the constants originate from MQUnifiedSensorsLib example .ino tables
+    for model in sensor_models():
+        if is_power_law_sensor(model):
+            joined = " ".join(sensor_sources(model))
+            assert "MQSensorsLib" in joined, model
+
+
+def test_mems_entries_are_relative_response_not_powerlaw():
+    # TGS8100 / SGP30 / SGP40 / BME680 are documented relative-response VOC
+    # channels with NO authoritative power-law constants -- they must NOT be
+    # quantifiable via a tabulated (a, b) pair.
+    for model in ["TGS8100", "SGP30", "SGP40", "BME680"]:
+        assert model in sensor_models(), model
+        assert is_power_law_sensor(model) is False, model
+        # requesting constants/gases must fail loudly (not fabricate values)
+        with pytest.raises(UnknownSensorError):
+            sensor_gases(model)
+        with pytest.raises(UnknownSensorError):
+            power_law(model, "VOC")
+
+
+def test_calibrate_quick_rejects_non_powerlaw_mems():
+    # calibrating a relative-response MEMS channel from offline constants is
+    # not allowed -- there is no (a, b) to use.
+    with pytest.raises(UnknownSensorError):
+        calibrate_quick("SGP30", "VOC")
+
+
+# --- calibrate_quick ---
+
+
+def test_calibrate_quick_from_datasheet():
+    q = calibrate_quick("MQ-2", "LPG", channel="alcohol_ch", reference_ppm=1000.0)
+    assert "alcohol_ch" in q
+    d = q["alcohol_ch"]
+    assert d["method"] == "datasheet"
+    assert d["referenceSubstance"] == "LPG"
+    assert d["referencePpm"] == 1000.0
+    assert d["a"] == pytest.approx(power_law("MQ-2", "LPG")["a"])
+    assert d["b"] == pytest.approx(power_law("MQ-2", "LPG")["b"])
+    # produced payload round-trips through the manifest descriptor
+    desc = CalibrationDescriptor.from_dict(d)
+    assert desc.a == d["a"]
+    assert desc.b == d["b"]
+
+
+def test_calibrate_quick_override():
+    q = calibrate_quick("MQ-2", "CO", override={"a": 5.0, "b": -0.3})
+    d = q["ch0"]
+    assert d["a"] == 5.0
+    assert d["b"] == -0.3
+
+
+def test_calibrate_quick_unknown():
+    with pytest.raises(UnknownSensorError):
+        calibrate_quick("MQ-999", "CO")
+
+
+def test_calibrate_quick_degenerate_override():
+    with pytest.raises(CalibrationError):
+        calibrate_quick("MQ-2", "LPG", override={"b": 0.0})
+    with pytest.raises(CalibrationError):
+        calibrate_quick("MQ-2", "LPG", override={"a": -1.0})
+
+
+# --- calibrate_precise ---
+
+
+def test_calibrate_precise_recovers_known_fit():
+    c = np.logspace(1.0, 3.0, 6)
+    a, b = 17.44, -0.450
+    rr = a * c ** b
+    res = calibrate_precise("MQ-2", "LPG", rr, c, channel="chLab")
+    assert res["channel"] == "chLab"
+    assert res["calibration"]["chLab"]["method"] == "multi-point-loglog"
+    assert res["diagnostics"]["a"] == pytest.approx(a, rel=1e-2)
+    assert res["diagnostics"]["b"] == pytest.approx(b, rel=1e-2)
+    assert res["diagnostics"]["r2"] > 0.99
+    assert res["loocv"]["n_folds"] == 6
+
+
+def test_calibrate_precise_needs_two_points():
+    with pytest.raises(CalibrationError):
+        calibrate_precise("MQ-2", "LPG", [1.0], [10.0])

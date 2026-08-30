@@ -23,6 +23,8 @@ from . import features as _features
 from .calibration import (
     CalibrationError,
     build_calibration_payload,
+    calibrate_precise,
+    calibrate_quick,
     concentration_series,
     fit_power_law,
     invert_concentration,
@@ -188,6 +190,8 @@ __all__ = [
     "build_calibration_payload",
     "concentration_series",
     "normed_to_rr",
+    "calibrate_quick",
+    "calibrate_precise",
     # Hardware sufficiency gate (§10.10 N→M limit)
     "HardwareInsufficiencyWarning",
     "check_rig_sufficiency",

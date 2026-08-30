@@ -1,0 +1,386 @@
+{
+  "version": 2,
+  "source": "MQ sensors: constants converted from MQUnifiedSensorsLib (github.com/miguel5612/MQSensorsLib) example .ino tables (see per-sensor 'sources'). MEMS entries (SGP30/SGP40/TGS8100/BME680) are documented as relative-response channels with NO authoritative power-law constants; 'power_law_calibratable': false and no 'gases' table.",
+  "convention": "rr = a * C^b  (C in ppm, rr = Rs/R0); C = (rr/a)^(1/b). Converted from MQUnified C = a_u*rr^b_u via b = 1/b_u, a = a_u^(-1/b_u)",
+  "sensors": {
+    "MQ-2": {
+      "family": "mox",
+      "clean_air_ratio": 9.83,
+      "gases": {
+        "LPG": {
+          "a": 17.446954,
+          "b": -0.450045
+        },
+        "H2": {
+          "a": 24.27599,
+          "b": -0.462535
+        },
+        "CO": {
+          "a": 29.461131,
+          "b": -0.321647
+        },
+        "Alcohol": {
+          "a": 21.388648,
+          "b": -0.373832
+        },
+        "Propane": {
+          "a": 19.95886,
+          "b": -0.461255
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-2/MQ-2.ino"
+      ]
+    },
+    "MQ-3": {
+      "family": "mox",
+      "clean_air_ratio": 60.0,
+      "gases": {
+        "Benzene": {
+          "a": 1.800926,
+          "b": -0.373134
+        },
+        "LPG": {
+          "a": 27.119457,
+          "b": -0.308166
+        },
+        "CH4": {
+          "a": 0.022565,
+          "b": 0.052604
+        },
+        "CO": {
+          "a": 31.358021,
+          "b": -0.261712
+        },
+        "Alcohol": {
+          "a": 0.537784,
+          "b": -0.664894
+        },
+        "Hexane": {
+          "a": 23.007626,
+          "b": -0.351
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-3/MQ-3.ino"
+      ]
+    },
+    "MQ-4": {
+      "family": "mox",
+      "clean_air_ratio": 4.4,
+      "gases": {
+        "CH4": {
+          "a": 11.988916,
+          "b": -0.358938
+        },
+        "LPG": {
+          "a": 14.13783,
+          "b": -0.321234
+        },
+        "CO": {
+          "a": 5.632617,
+          "b": -0.052493
+        },
+        "Alcohol": {
+          "a": 5.879203,
+          "b": -0.071378
+        },
+        "Smoke": {
+          "a": 7.943109,
+          "b": -0.120366
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-4/MQ-4.ino"
+      ]
+    },
+    "MQ-5": {
+      "family": "mox",
+      "clean_air_ratio": 6.5,
+      "gases": {
+        "H2": {
+          "a": 6.185839,
+          "b": -0.258131
+        },
+        "LPG": {
+          "a": 6.093045,
+          "b": -0.411353
+        },
+        "CH4": {
+          "a": 7.563737,
+          "b": -0.390625
+        },
+        "CO": {
+          "a": 9.481411,
+          "b": -0.171644
+        },
+        "Alcohol": {
+          "a": 10.329909,
+          "b": -0.203335
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-5/MQ-5.ino"
+      ]
+    },
+    "MQ-6": {
+      "family": "mox",
+      "clean_air_ratio": 10.0,
+      "gases": {
+        "CH4": {
+          "a": 20.769313,
+          "b": -0.395883
+        },
+        "H2": {
+          "a": 23.704429,
+          "b": -0.278009
+        },
+        "LPG": {
+          "a": 18.97965,
+          "b": -0.425532
+        },
+        "CO": {
+          "a": 12.915497,
+          "b": -0.074074
+        },
+        "Alcohol": {
+          "a": 19.034274,
+          "b": -0.166196
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-6/MQ-6.ino"
+      ]
+    },
+    "MQ-7": {
+      "family": "mox",
+      "clean_air_ratio": 27.5,
+      "gases": {
+        "CO": {
+          "a": 20.642821,
+          "b": -0.658762
+        },
+        "H2": {
+          "a": 21.796273,
+          "b": -0.727802
+        },
+        "LPG": {
+          "a": 14.069111,
+          "b": -0.12982
+        },
+        "CH4": {
+          "a": 20.287334,
+          "b": -0.094877
+        },
+        "Alcohol": {
+          "a": 22.09512,
+          "b": -0.080972
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-7/MQ-7.ino"
+      ]
+    },
+    "MQ-8": {
+      "family": "mox",
+      "clean_air_ratio": 70.0,
+      "gases": {
+        "H2": {
+          "a": 22169.586802,
+          "b": -1.453488
+        },
+        "LPG": {
+          "a": 174.355045,
+          "b": -0.320205
+        },
+        "CH4": {
+          "a": 121.806949,
+          "b": -0.150015
+        },
+        "CO": {
+          "a": 184.783047,
+          "b": -0.123854
+        },
+        "Alcohol": {
+          "a": 421.117628,
+          "b": -0.537634
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-8/MQ-8.ino"
+      ]
+    },
+    "MQ-9": {
+      "family": "mox",
+      "clean_air_ratio": 9.6,
+      "gases": {
+        "LPG": {
+          "a": 23.575936,
+          "b": -0.457457
+        },
+        "CH4": {
+          "a": 23.495903,
+          "b": -0.377644
+        },
+        "CO": {
+          "a": 17.295073,
+          "b": -0.445633
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-9/MQ-9.ino"
+      ]
+    },
+    "MQ-135": {
+      "family": "mox",
+      "clean_air_ratio": 3.6,
+      "gases": {
+        "CO": {
+          "a": 5.088621,
+          "b": -0.254001
+        },
+        "Alcohol": {
+          "a": 3.923626,
+          "b": -0.314465
+        },
+        "CO2": {
+          "a": 5.175137,
+          "b": -0.349406
+        },
+        "Toluene": {
+          "a": 3.018137,
+          "b": -0.290276
+        },
+        "NH4": {
+          "a": 6.494653,
+          "b": -0.404367
+        },
+        "Acetone": {
+          "a": 2.864757,
+          "b": -0.296824
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-135/MQ-135.ino"
+      ]
+    },
+    "MQ-136": {
+      "family": "mox",
+      "clean_air_ratio": 3.6,
+      "gases": {
+        "H2S": {
+          "a": 2.770893,
+          "b": -0.282805
+        },
+        "NH4": {
+          "a": 6.390276,
+          "b": -0.40404
+        },
+        "CO": {
+          "a": 5.198937,
+          "b": -0.264971
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-136/MQ-136.ino"
+      ]
+    },
+    "MQ-131": {
+      "family": "mox",
+      "clean_air_ratio": 15.0,
+      "gases": {
+        "CL2": {
+          "a": 25.792179,
+          "b": -0.84317
+        },
+        "O3": {
+          "a": 17.478462,
+          "b": -0.900901
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-131/MQ-131.ino"
+      ]
+    },
+    "MQ-303A": {
+      "family": "mox",
+      "clean_air_ratio": 1.0,
+      "gases": {
+        "Isobutane": {
+          "a": 1.87998,
+          "b": -0.345543
+        },
+        "Hydrogen": {
+          "a": 1.688527,
+          "b": -0.368189
+        },
+        "Ethanol": {
+          "a": 1.67218,
+          "b": -0.411184
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-303A/MQ-303A.ino"
+      ]
+    },
+    "MQ-309A": {
+      "family": "mox",
+      "clean_air_ratio": 11.0,
+      "gases": {
+        "H2": {
+          "a": 42.929865,
+          "b": -0.512558
+        },
+        "CH4": {
+          "a": 60.333013,
+          "b": -0.595238
+        },
+        "CO": {
+          "a": 31.351574,
+          "b": -0.249377
+        },
+        "Alcohol": {
+          "a": 35.990833,
+          "b": -0.274198
+        }
+      },
+      "sources": [
+        "https://github.com/miguel5612/MQSensorsLib/blob/master/examples/MQ-309A/MQ-309A.ino"
+      ]
+    },
+    "TGS8100": {
+      "family": "mox",
+      "power_law_calibratable": false,
+      "note": "Figaro TGS8100 MEMS MOS. Figaro publishes a single sensitivity ratio (Rs(10ppm H2)/Rs(air)~0.6) and an iso-butane curve, but NO power-law (a,b) coefficients. Relative-response channel only.",
+      "sources": [
+        "https://www.figarosensor.com/product/docs/TGS8100%280914%29.pdf",
+        "http://www.figarosensor.com/feature/tgs8100.html"
+      ]
+    },
+    "SGP30": {
+      "family": "cmos_mems",
+      "power_law_calibratable": false,
+      "note": "Sensirion SGP30. Outputs processed eCO2 (ppm) and TVOC (ppb) via on-chip baseline algorithm; does NOT expose a resistance-to-concentration power law. Channel is usable as relative VOC index only.",
+      "sources": [
+        "https://sensirion.com/products/catalog/SGP30"
+      ]
+    },
+    "SGP40": {
+      "family": "cmos_mems",
+      "power_law_calibratable": false,
+      "note": "Sensirion SGP40. Outputs a processed VOC index (0-500) via on-chip algorithm; no resistance power law to a target gas. Relative VOC index channel only.",
+      "sources": [
+        "https://www.sensirion.com/products/catalog/SGP40"
+      ]
+    },
+    "BME680": {
+      "family": "mox",
+      "power_law_calibratable": false,
+      "note": "Bosch BME680. Outputs raw MOX gas resistance (kOhm) but is documented as a relative VOC sensor with NO per-gas concentration power law; Bosch only provides the closed-source BSEC library for IAQ. Relative-response channel only.",
+      "sources": [
+        "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme680-ds001.pdf",
+        "https://www.bosch-sensortec.com/en/products/environmental-sensors/gas-sensors/bme680"
+      ]
+    }
+  }
+}

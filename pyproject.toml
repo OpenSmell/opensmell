@@ -16,3 +16,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["opensmell*"]
+
+[tool.setuptools.package-data]
+"opensmell.constants" = ["*.json"]
