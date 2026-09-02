@@ -7,6 +7,22 @@ warnings.filterwarnings("ignore", message="Covariance of the parameters could no
 
 N_CHANNELS = 6
 
+
+def _trapz(y, x=None):
+    """Composite trapezoidal rule, version-robust across numpy.
+
+    ``np.trapezoid`` (numpy >= 2.0) and ``np.trapz`` (numpy < 2.0) are the same
+    function under different names; neither exists across both. Sending the
+    ``trapezoid`` attribute through getattr keeps the AUC/hysteresis code working
+    on any supported numpy without depending on a pinned major.
+    """
+    trapz = getattr(np, "trapezoid", None) or getattr(np, "trapz", None)
+    if trapz is None:
+        raise RuntimeError("numpy provides neither np.trapezoid nor np.trapz")
+    if x is None:
+        return trapz(y)
+    return trapz(y, x)
+
 NOMINAL_CALIBRATION = (1.0, -0.5)
 
 
@@ -105,7 +121,7 @@ def compute_channel_device_agnostic(series, r0_samples=15, sr=10, r0=None):
             if len(end_candidates) > 0:
                 decay_time = (si + end_candidates[0]) / sr
 
-    auc = float(np.trapezoid(np.abs(norm)))
+    auc = float(_trapz(np.abs(norm)))
     endpoint_delta = float((series[-1] - R0) / R0)
 
     return {
@@ -194,8 +210,8 @@ def compute_channel_health(series, r0_samples=15, r0=None):
     if peak_idx < len(series) - 5 and peak_idx > 5:
         ads_curve = series[:peak_idx + 1]
         des_curve = series[peak_idx:]
-        ads_path = np.trapezoid(np.abs(ads_curve - r0))
-        des_path = np.trapezoid(np.abs(des_curve - r0))
+        ads_path = _trapz(np.abs(ads_curve - r0))
+        des_path = _trapz(np.abs(des_curve - r0))
         hysteresis = float(abs(ads_path - des_path) / max(ads_path, 1e-10))
     else:
         hysteresis = 0.0
@@ -468,8 +484,18 @@ def extract_all_framework_features(data, r0_samples=15, sr=10, r0_per_channel=No
     return features
 
 
-def feature_names():
-    n_ch = N_CHANNELS
+def feature_names(n_channels=N_CHANNELS):
+    """Ordered framework feature names for ``n_channels``.
+
+    The framework length is a function of channel count —
+    ``28·c + c(c−1)/2 + 4`` (28 per channel, one selectivity ratio per pair, 4
+    global) — so names are generated for the given ``n_channels``. This mirrors
+    the extractor, which derives the channel count from the data shape, and the
+    Rust SDK's ``framework_feature_len(c)``. Defaults to the canonical 6.
+    """
+    n_ch = N_CHANNELS if n_channels is None else n_channels
+    if n_ch < 1:
+        return []
     names = []
     for ch in range(n_ch):
         for fn in ["relative_amplitude", "direction", "rise_time", "decay_time",

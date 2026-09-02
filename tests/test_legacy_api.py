@@ -43,6 +43,25 @@ def test_feature_names_reproducible():
     assert len(opensmell.feature_names()) == 187
 
 
+def test_feature_names_are_channel_agnostic():
+    # Coefficient-agnostic contract: length = 28c + c(c-1)/2 + 4.
+    # 187 is the canonical 6-channel instance; the formula holds for any c.
+    cases = {1: 32, 3: 91, 4: 122, 6: 187, 12: 406}
+    from opensmell.mox import features as _f
+
+    for c, expected in cases.items():
+        assert len(_f.feature_names(n_channels=c)) == expected, (c, expected)
+    # Default and explicit-None both resolve to the canonical 6.
+    assert len(_f.feature_names()) == 187
+    assert len(_f.feature_names(n_channels=None)) == 187
+    # Names must match what the shape-driven extractor actually produces.
+    rng = np.random.RandomState(0)
+    for c in (3, 6):
+        fake = rng.rand(120, c)
+        feats = _f.extract_all_framework_features(fake)
+        assert len(feats) == len(_f.feature_names(n_channels=c)), c
+
+
 def test_determinism():
     a = opensmell.process(FIXTURE)
     b = opensmell.process(FIXTURE)

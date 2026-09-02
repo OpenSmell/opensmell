@@ -92,7 +92,9 @@ def _feature_vector(feature_dict: dict) -> tuple:
     return np.array(values, dtype=np.float32), keys
 
 
-def _features_from_normed(normed: np.ndarray) -> tuple:
+def _features_from_normed(normed: np.ndarray, n_channels: int = None) -> tuple:
+    if n_channels is None:
+        n_channels = normed.shape[1] if normed.ndim == 2 else 1
     segments = segment(normed)
     all_features = []
     for seg in segments:
@@ -100,7 +102,7 @@ def _features_from_normed(normed: np.ndarray) -> tuple:
         vals, _ = _feature_vector(feats)
         all_features.append(vals)
     arr = np.array(all_features)
-    fnames = _features.feature_names()
+    fnames = _features.feature_names(n_channels=n_channels)
     return arr, fnames
 
 
@@ -110,12 +112,17 @@ def load_recording(filepath: str) -> np.ndarray:
 
 
 def extract_features(filepath: str) -> tuple:
-    return _features_from_normed(load_recording(filepath))
+    normed = load_recording(filepath)
+    return _features_from_normed(normed, n_channels=normed.shape[1])
 
 
-def feature_names() -> list:
-    """Names of the MOX framework features (in extraction order)."""
-    return _features.feature_names()
+def feature_names(n_channels=None) -> list:
+    """Names of the MOX framework features (in extraction order).
+
+    Length is a function of channel count (``28·c + c(c−1)/2 + 4``); pass
+    ``n_channels`` to match a non-6 rig, or omit for the canonical 6.
+    """
+    return _features.feature_names(n_channels=n_channels)
 
 
 def process(filepath: str, model: Pipeline = None) -> SmellResult:
