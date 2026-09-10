@@ -202,4 +202,4 @@ separate implementation), for quick one-liners:
 - [Chemoprint](https://github.com/opensmell/chemoprint) — the molecule-half representation
   from SMILES
 
-Browse the full reference at [opensmell.org/docs/python](https://opensmell.org/docs/python).
+Browse the full reference at [opensmell.xyz/docs/python](https://opensmell.xyz/docs/python).

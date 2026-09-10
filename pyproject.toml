@@ -1,11 +1,12 @@
 [project]
 name = "opensmell"
-version = "3.0.0"
+version = "3.0.1"
 description = "OpenSmell SDK — modular digital-olfaction framework: .osmell I/O, quality scoring, and sensor-specific feature extraction (MOX, MIRIS, electrochemical)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "OpenSmell Project", email = "opensmell@users.noreply.github.com" },
+    { name = "OpenSmell Project", email = "praise@opensmell.xyz" },
+    { name = "Praise J.J.", email = "praisejx@proton.me" },
 ]
 keywords = ["digital olfaction", "electronic nose", "gas sensors", "MOX", ".osmell"]
 classifiers = [
@@ -28,7 +29,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/OpenSmell/opensmell"
+Homepage = "https://opensmell.xyz"
+Documentation = "https://opensmell.xyz/docs/python"
 Repository = "https://github.com/OpenSmell/opensmell"
 
 [build-system]
