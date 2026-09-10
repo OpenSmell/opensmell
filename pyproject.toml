@@ -1,6 +1,6 @@
 [project]
 name = "opensmell"
-version = "3.0.1"
+version = "1.0.0"
 description = "OpenSmell SDK — modular digital-olfaction framework: .osmell I/O, quality scoring, and sensor-specific feature extraction (MOX, MIRIS, electrochemical)"
 readme = "README.md"
 license = { text = "MIT" }
