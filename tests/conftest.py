@@ -23,6 +23,7 @@ def make_manifest(
     baseline_source="auto",
     channels=None,
     sampling_rate_hz=None,
+    adc_max=None,
 ):
     return OsmellManifest(
         osmell={"formatVersion": "1.0.0"},
@@ -31,6 +32,7 @@ def make_manifest(
             channels=[ChannelDescriptor(id=c, unit="adc") for c in (channels or CHANNELS)],
             time_column="timestamp_ms",
             sampling_rate_hz=sampling_rate_hz,
+            adc_max=adc_max,
         ),
         session=SessionDescriptor(
             role=role,
@@ -67,6 +69,7 @@ def make_file(
     drift=True,
     dead_channels=None,
     sampling_rate_hz=None,
+    adc_max=None,
 ):
     """Synthetic 10 Hz exposure with a recovery tail (spec-meaningful R factor)."""
     channels = channels or CHANNELS
@@ -80,5 +83,10 @@ def make_file(
         base = 100.0 + idx * 30
         amp = 600.0 if drift else 0.0
         data[c] = [base + amp * _envelope(i, n) for i in range(n)]
-    manifest = make_manifest(role=role, channels=channels, sampling_rate_hz=sampling_rate_hz)
+    manifest = make_manifest(
+        role=role,
+        channels=channels,
+        sampling_rate_hz=sampling_rate_hz,
+        adc_max=adc_max,
+    )
     return OsmellFile(manifest=manifest, time=time, data=data)

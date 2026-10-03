@@ -92,13 +92,50 @@ confidence.
 Seven weighted factors (baseline stability, signal strength, continuity, recovery,
 dynamic range, saturation-free, duration) produce a score and a badge —
 Excellent / Good / Fair / Poor / Unknown — with every assumption flagged (used default ADC,
-used median sampling rate, no baseline, non-finite samples, dead sensors).
+used median sampling rate, no baseline, non-finite samples, dead sensors, time-unit
+mismatch).
 
 ```python
 q = opensmell.compute_quality(file, sample_count=len(file.time),
                               guess_sampling_rate_hz=10.0)
 print(q.badge, q.total)
 ```
+
+**The factor weights are provisional and are not calibrated against data.** They
+encode a judgement about which failure modes matter, not a measured optimum, and
+should not be cited as one. Three calibration attempts have failed for reasons that
+are documented, along with a defect analysis of the scorer itself and a description
+of the corpus that would be needed to close the remaining one.
+
+That analysis is in [`docs/quality-weight-calibration.md`](docs/quality-weight-calibration.md).
+The harness is in `tools/derive_quality_weights.py` and `tools/stress_quality_corpus.py`.
+Contributions of labeled defective recordings and real cross-device repetitions are
+the most useful thing the community can supply here; see the call for contributions
+in that document.
+
+Four defects found during the calibration study have been fixed, and all four had the
+same shape — a defect in the recording *raised* the quality score:
+
+- a seconds-valued time column is flagged instead of being scored as packet loss;
+- `dynamicRange` no longer rewards interference;
+- dead channels lower the total instead of raising it;
+- saturation no longer rewards itself. A sample pinned at the converter rail carries no
+  amplitude information, but it was being counted as both span and peak, so a saturated
+  channel scored a wider dynamic range and a stronger signal than the same channel read
+  in range. `saturationFree` still reports the clipping.
+
+That a quality score improved for each of these is the reason to distrust a quality
+score that has not been shown monotone in every input. Regression tests cover each
+defect in both this implementation and `opensmell-rs`.
+
+Note that the saturation fix needs a manifest declaring `adcMax`; without one there is
+no rail to identify and the check stays silent.
+
+Known limitation that remains: the seven subscores are not on a common scale.
+Continuity and duration are per-recording and move by 80+ points when a recording is
+bad, while saturation-free is a per-channel mean, so one saturated channel out of six
+moves it by at most 16.7. Compare subscores within a recording rather than across
+devices until this is fixed.
 
 ## Reference-point calibration
 

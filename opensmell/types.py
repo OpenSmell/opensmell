@@ -44,6 +44,26 @@ FULL_SCORE_DURATION_S = 60
 MIN_SPAN_FRACTION = 0.1
 GAP_TOLERANCE = 0.1
 
+# Dynamic range is measured as a robust 5th-95th percentile span, minus this
+# multiple of the channel's own noise standard deviation. Without the
+# subtraction, an interference burst inflates max and min and *raises* the
+# dynamic-range score for a recording that has got worse.
+NOISE_SPAN_TOLERANCE = 3.0
+
+# The time column is assumed to be milliseconds. When `samplingRateHz` is
+# declared, the observed median gap should sit within these multiples of the
+# expected period. A ratio far below 1 means the column is probably seconds or
+# microseconds; far above 1 means it is probably nanoseconds or the declared
+# rate is wrong. Both are unit faults rather than packet loss, so continuity is
+# withheld instead of being reported as a real gap statistic.
+MIN_TIME_UNIT_RATIO = 0.5
+MAX_TIME_UNIT_RATIO = 2.0
+
+# A dead sensing element is excluded from the live-channel mean because a
+# constant channel contributes no span information. Excluding it must not read
+# as an improvement, so each dead channel costs this much of the total.
+DEAD_SENSOR_PENALTY = 12.5
+
 
 def _camel(name: str) -> str:
     """Convert snake_case to camelCase."""
@@ -309,6 +329,7 @@ class QualityFlags:
     used_median_sampling_rate: bool = False
     no_baseline: bool = False
     empty_recording: bool = False
+    time_unit_mismatch: bool = False
 
 
 @dataclass

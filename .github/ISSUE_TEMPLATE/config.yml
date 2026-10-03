@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Quality calibration data call
+    url: https://github.com/OpenSmell/opensmell/issues/new?template=quality-calibration-data.md
+    about: Contribute recordings, labeled defects, or a negative calibration result
+  - name: Quality calibration analysis and open defects
+    url: https://github.com/OpenSmell/opensmell/blob/master/docs/quality-weight-calibration.md
+    about: Why the factor weights are provisional, and the four known defects
