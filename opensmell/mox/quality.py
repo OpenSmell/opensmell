@@ -41,10 +41,15 @@ with the available data:
 Five concrete defects were identified. Four were logic bugs and are now fixed; the
 fifth needs the corpus and is the remaining blocker.
 
-The four fixed defects share one shape, which is the reason to distrust a quality
-score that has not been shown monotone in every input: **each defect raised the
-score.** Noise, saturation, a dead channel, and a mislabelled time column each
-produced a better result for data that had got worse.
+The four fixed defects come in two shapes, and both are reasons to distrust a
+quality score that has not been shown monotone in every input. Three of them —
+noise, saturation, and a dead channel — **raised** the score: worse data scored
+better. The fourth, a mislabelled time column, did the opposite and is the more
+instructive of the two. It did not reward bad data; it made a clean recording
+score identically to a broken one, which destroys the subscore's ability to
+report on anything at all. A score that improves for worse data is wrong, and a
+score that reports the same number for two opposite faults is not measuring
+anything.
 
 1. FIXED. The time column is assumed to be **milliseconds**. When the observed
    median gap is far from the period implied by `samplingRateHz`, continuity is

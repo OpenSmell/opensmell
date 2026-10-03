@@ -113,8 +113,10 @@ Contributions of labeled defective recordings and real cross-device repetitions 
 the most useful thing the community can supply here; see the call for contributions
 in that document.
 
-Four defects found during the calibration study have been fixed, and all four had the
-same shape — a defect in the recording *raised* the quality score:
+Four defects found during the calibration study have been fixed. Three shared one
+shape — a defect in the recording *raised* the quality score. The fourth was the
+opposite failure: it did not reward bad data, it erased the evidence that the data
+was good.
 
 - a seconds-valued time column is flagged instead of being scored as packet loss;
 - `dynamicRange` no longer rewards interference;
@@ -124,9 +126,18 @@ same shape — a defect in the recording *raised* the quality score:
   channel scored a wider dynamic range and a stronger signal than the same channel read
   in range. `saturationFree` still reports the clipping.
 
-That a quality score improved for each of these is the reason to distrust a quality
-score that has not been shown monotone in every input. Regression tests cover each
-defect in both this implementation and `opensmell-rs`.
+The first, `dynamicRange`, dead channels, and saturation each let worse data score
+better. The time-column defect was quieter and just as damaging: a time column
+labelled as seconds while holding milliseconds produced a continuity score of 0,
+identical to the score for a recording that had genuinely lost its packets. A
+caller reading 0 could not tell a mislabelled column from a broken one, so the
+defect destroyed the subscore's ability to say anything at all. Continuity is now
+withheld with reason `time_unit_mismatch` rather than silently reporting 0.
+
+A quality score that improves for worse data, or that reports the same number for
+two opposite faults, is not measuring quality. That is the reason to distrust a
+score not yet shown monotone and non-degenerate in every input. Regression tests
+cover each defect in both this implementation and `opensmell-rs`.
 
 Note that the saturation fix needs a manifest declaring `adcMax`; without one there is
 no rail to identify and the check stays silent.

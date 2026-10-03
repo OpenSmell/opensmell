@@ -82,11 +82,14 @@ Four of the five were logic bugs and have since been fixed. They were independen
 the weight question, so they did not need the corpus. The fifth is a design question
 that genuinely does need one.
 
-All four fixed defects share one shape: a defect in the recording *raised* the score.
-Noise, saturation, and a failed element each improved a quality score for data that
-had got worse. That pattern is worth stating plainly, because it means a quality
-score is not evidence of quality until every one of its inputs has been shown to be
-monotone in the right direction.
+Three of the four fixed defects share one shape: a defect in the recording *raised*
+the score. Noise, saturation, and a failed element each improved a quality score for
+data that had got worse. The time-column defect was the opposite failure, and is
+arguably the more instructive of the two kinds: it did not reward bad data, it made
+a clean recording indistinguishable from a broken one. Both kinds break the same
+property, so both matter. A quality score is not evidence of quality until every one
+of its inputs has been shown to be monotone in the right direction *and* to
+distinguish the failure modes it claims to detect.
 
 ### 1. The time column is assumed to be milliseconds — FIXED
 
