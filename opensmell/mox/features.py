@@ -121,7 +121,7 @@ def compute_channel_device_agnostic(series, r0_samples=15, sr=10, r0=None):
             if len(end_candidates) > 0:
                 decay_time = (si + end_candidates[0]) / sr
 
-    auc = float(_trapz(np.abs(norm)))
+    auc = float(_trapz(np.abs(norm))) / float(sr)
     endpoint_delta = float((series[-1] - R0) / R0)
 
     return {
@@ -167,7 +167,7 @@ def compute_channel_temporal(series, sr=10):
                 "oscillation_amp": 0.0, "response_latency": -1.0}
 
     diffs = np.diff(series)
-    hf_transient = float(np.mean(np.abs(diffs))) if len(diffs) > 0 else 0.0
+    hf_transient = float(np.mean(np.abs(diffs))) * sr if len(diffs) > 0 else 0.0
 
     detrended = sp_signal.detrend(series)
     if len(detrended) > 20:
@@ -194,7 +194,7 @@ def compute_channel_temporal(series, sr=10):
     }
 
 
-def compute_channel_health(series, r0_samples=15, r0=None):
+def compute_channel_health(series, r0_samples=15, r0=None, sr=10):
     series = np.asarray(series, dtype=np.float64)
     if len(series) < r0_samples + 5:
         return {"drift_rate": 0.0, "sensitivity_decay": 0.0,
@@ -202,7 +202,26 @@ def compute_channel_health(series, r0_samples=15, r0=None):
 
     r0 = _r0_from_contract(series, r0_samples, r0)
 
-    drift_rate = float((np.mean(series[-10:]) - r0) / r0) if len(series) >= 10 else 0.0
+    # Drift rate: dR/dt, as a least-squares slope against the time axis.
+    #
+    # The per-sample slope is multiplied by sr to convert "per sample" into
+    # "per second", which makes it cadence-independent. Previously this was a
+    # two-point difference across the last ten samples divided by r0 and scaled
+    # by sr/10 -- three separate problems: it used only two of the available
+    # points, the span between series[-1] and series[-10] is nine intervals and
+    # not ten, and dividing by r0 made it a relative quantity while the Rust
+    # implementation and the published definition (dR0/dt) are absolute.
+    # Kept in step with opensmell-rs/src/features/health.rs.
+    n = len(series)
+    drift_rate = 0.0
+    if n >= 2:
+        idx = np.arange(n, dtype=np.float64)
+        x_mean = (n - 1.0) / 2.0
+        ss_xx = float(((idx - x_mean) ** 2).sum())
+        if ss_xx > 0.0:
+            y_mean = float(series.mean())
+            ss_xy = float(((idx - x_mean) * (series - y_mean)).sum())
+            drift_rate = (ss_xy / ss_xx) * float(sr)
     sensitivity_decay = 0.0
     noise_floor = float(np.std(series[:r0_samples]) / r0) if r0 > 0 else 0.0
 
@@ -415,7 +434,7 @@ def extract_all_framework_features(data, r0_samples=15, sr=10, r0_per_channel=No
         te = compute_channel_temporal(series, sr)
         temporal_results.append(te)
 
-        he = compute_channel_health(series, r0_samples, R0)
+        he = compute_channel_health(series, r0_samples, R0, sr)
         health_results.append(he)
 
         ha = compute_channel_hardware(series)
