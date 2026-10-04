@@ -1,0 +1,149 @@
+# industrial_process_fault — fault detection on a continuous process line.
+#
+# The array watches two things at once: the process gas signature, and its own
+# health. On a line that runs unattended for weeks, a slowly dying sensor and a
+# genuine process fault look alike, so `health` and `hardware` are requested as
+# first-class groups rather than as diagnostics.
+
+id: industrial_process_fault
+name: Industrial process fault
+description: >
+  Continuous monitoring of a process line for faults that change the gas
+  signature: loss of reaction, incomplete combustion, a leaking seal, a failed
+  purge, a catalyst loading up. Runs alongside the array's own health features
+  so that a process fault and a failing element are separable in the record
+  rather than confusable in it.
+
+sensor_type: mox
+
+# 1 Hz. Process events are slow — a drifting reactor, a seal that weeps over a
+# shift — so the cadence is chosen for a 24/7 duty cycle rather than for
+# detection latency.
+# NEEDS EMPIRICAL VALIDATION: the figure follows the power-saving rate in
+# HARDWARE.md and the 1 Hz corpora in this workspace. Whether 1 Hz is fast
+# enough for the fastest fault worth catching (a flare trip, a pressure excursion)
+# has not been measured, and a process line that needs sub-second detection
+# should be sampled faster.
+cadence_hz: 1
+cadence_rationale: >
+  Process faults develop over minutes to shifts, so 1 Hz is far faster than the
+  events being watched and is chosen instead for the duty cycle: an
+  always-on unit at 1 Hz produces about 86k samples per channel per day, which is
+  the difference between a year of history fitting on a device and not. This
+  follows the 1 Hz power-saving mode in HARDWARE.md. It is not validated for the
+  fastest fault a line might need to catch.
+
+sensors:
+  - id: mq5
+    model: MQ-5
+    role: primary
+    targets: [CO, CH4, LPG, H2, Alcohol]
+    clean_air_ratio: 6.5
+    note: >
+      The process workhorse: the tabulated targets are exactly the set of
+      species that mean incomplete combustion or a hydrocarbon leak, in one
+      element.
+
+  - id: mq4
+    model: MQ-4
+    role: primary
+    targets: [CH4, LPG, Smoke]
+    clean_air_ratio: 4.4
+    note: >
+      Methane as the hydrocarbon-trace channel. Its Smoke response is an
+      independent path to a combustion fault, which is what makes a two-element
+      agreement meaningful.
+
+  - id: mq7
+    model: MQ-7
+    role: primary
+    targets: [CO, H2]
+    clean_air_ratio: 27.5
+    note: >
+      CO on its own element, which is the alarm most likely to be acted on and
+      therefore the one most worth cross-checking.
+
+  - id: mq8
+    model: MQ-8
+    role: primary
+    targets: [H2, CH4, Alcohol]
+    clean_air_ratio: 70.0
+    note: >
+      Hydrogen: leak detection on a hydrogen line, and the reduction of a
+      catalytic bed. The highest-selectivity H2 channel available.
+
+  - id: mq9
+    model: MQ-9
+    role: supporting
+    targets: [CO, LPG, CH4]
+    clean_air_ratio: 9.6
+    note: >
+      Third CO/combustible path, so a single element drifting produces a split
+      verdict instead of a confident wrong one.
+
+  - id: mq2
+    model: MQ-2
+    role: cross_sensitivity
+    targets: [LPG, CO, Alcohol, Propane]
+    clean_air_ratio: 9.83
+    note: >
+      Included for its cross-sensitivity: on a solvent-bearing process its
+      response to a normal batch is what a leak would look like, so a fault call
+      that only mq2 sees is the one to distrust.
+
+context_columns: [temperature, pressure, humidity]
+
+# Everything except `absolute`'s calibrated_concentration, which needs a
+# calibration this preset does not ship. `health` and `hardware` are the point of
+# this preset: an unattended line needs the element's own condition in the same
+# record as the process's.
+feature_groups: [device_agnostic, temporal, health, hardware, saturation, decay, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged, and
+    unchanged on purpose. A process line running for months will drift, and the
+    correct answer to gradual drift is to re-anchor — the verdict layer permits
+    correction on Normal and GradualDrift and forbids it on Poisoning and Dead
+    for exactly this reason. Re-derive drift_abs_floor per rig: it is in the
+    units of the recorded series.
+
+false_alarm_budget:
+  # Judgement target, not a measured operating point. ~1 per 5 days.
+  alarms_per_day: 0.2
+  rationale: >
+    A nuisance trip on a process line costs an operator trip and a look at a
+    panel that turns out to be fine, and operators stop looking within weeks. One
+    call per line every few days keeps the response credible; per-shift calls
+    would not. Looser than the IAQ budget because the consequence of a missed
+    fault is higher, tighter because the consequence of a false one is a trained
+    operator being trained out.
+
+provisional:
+  - cadence_hz
+  - false_alarm_budget.alarms_per_day
+
+notes: >
+  A fault "detection" here means a change in the array's response pattern that a
+  process engineer investigates. It does not mean a trip: interlocks and trips
+  stay on the process control system, where they belong, with a certified
+  detector as the independent path.
+
+  Humidity and pressure are context columns, never sensor channels. A process
+  with a vent or an autoclave will move its MOX baselines with humidity alone,
+  and separating that from a real leak is the reason `context_columns` exists in
+  the data model rather than being a convenience.
+
+  No detection rate, false-negative rate or lead time is claimed anywhere in this
+  file. Validating a fault-detection claim needs a labelled fault-injection
+  campaign on the actual process; this preset only says how to configure the
+  array for one.

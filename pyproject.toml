@@ -33,6 +33,9 @@ Homepage = "https://opensmell.xyz"
 Documentation = "https://opensmell.xyz/docs/python"
 Repository = "https://github.com/OpenSmell/opensmell"
 
+[project.scripts]
+opensmell-presets = "opensmell.presets_cli:main"
+
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
@@ -42,3 +45,11 @@ include = ["opensmell*"]
 
 [tool.setuptools.package-data]
 "opensmell.constants" = ["*.json"]
+
+# The preset YAML files live at the repository root rather than inside the
+# package, so they ship as sdist data and are installed under
+# <prefix>/share/opensmell/presets -- the last location `presets_dir()` searches.
+# A source checkout and an editable install find them at the repository root
+# without any of this.
+[tool.setuptools.data-files]
+"share/opensmell/presets" = ["presets/*.yaml"]

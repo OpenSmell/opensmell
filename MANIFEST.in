@@ -1,1 +1,4 @@
-
+include README.md
+include LICENSE
+recursive-include presets *.yaml
+recursive-include opensmell/constants *.json

@@ -71,6 +71,19 @@ from .io import (
     write_osmell,
 )
 from .quality import compute_quality
+from .presets import (
+    AnomalyThresholds,
+    BaselineProtocol,
+    FalseAlarmBudget,
+    Preset,
+    PresetError,
+    PresetNotFoundError,
+    SensorSpec,
+    list_presets,
+    load_all_presets,
+    load_preset,
+    presets_dir,
+)
 from .types import (
     OSMELL_FORMAT_VERSION,
     CalibrationDescriptor,
@@ -236,4 +249,16 @@ __all__ = [
     "ChannelStats",
     "QualityReport",
     "CalibrationDescriptor",
+    # Configuration presets (opensmell/presets/*.yaml)
+    "Preset",
+    "SensorSpec",
+    "BaselineProtocol",
+    "AnomalyThresholds",
+    "FalseAlarmBudget",
+    "PresetError",
+    "PresetNotFoundError",
+    "presets_dir",
+    "list_presets",
+    "load_preset",
+    "load_all_presets",
 ]

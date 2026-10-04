@@ -1,0 +1,146 @@
+# food_freshness — headspace monitoring of protein and produce storage.
+#
+# Microbial spoilage is preceded by a measurable shift in the volatile
+# headspace: amines and sulfur compounds from protein catabolism, rising CO2
+# from respiration. The array watches the chemistry of the breakdown; it does
+# not produce a "safe to eat" call, and nothing here establishes one.
+
+id: food_freshness
+name: Food freshness / spoilage
+description: >
+  Headspace monitoring of stored food for the volatile signature of microbial
+  breakdown. Read the output as a trend for a human to act on — pull the item,
+  inspect it, use a validated microbiological method — never as a spoilage
+  verdict. An electronic nose cannot establish safety, and this preset makes no
+  such claim.
+
+sensor_type: mox
+
+# One sample per minute. Spoilage chemistry moves on hours to days, so a faster
+# cadence buys no information and only adds heater duty cycle and data volume.
+# One sample per minute is also the cadence of the only public spoilage series
+# exercised in this workspace (Harvard beef cuts, run as e-nose-evals U3: a
+# 2220-minute series sampled once per minute), so this preset's feature
+# selection is checkable against a recording that exists.
+#
+# At 60 s the shortest resolvable event is 120 s (2 dt), which is why `temporal`
+# and `decay` are NOT requested below: their values would describe the shape of
+# the sample sequence rather than the chemistry. Level and trend are what a
+# spoilage monitor needs.
+cadence_period_s: 60
+cadence_rationale: >
+  Spoilage chemistry moves on hours to days. One sample per minute is the
+  cadence of the Harvard beef-spoilage series evaluated in this workspace as
+  e-nose-evals U3, so this preset stays comparable with the only spoilage data
+  the project holds. The consequence is explicit: 120 s is the shortest
+  resolvable event, so the temporal and decay groups are switched off and the
+  unit is read for level and drift.
+
+sensors:
+  - id: mq136
+    model: MQ-136
+    role: primary
+    targets: [H2S, NH4, CO]
+    # Rs/R0 in clean air, from the offline constants table. The loader refuses
+    # this value if it disagrees with what `opensmell.constants` holds for
+    # MQ-136, so the entry cannot drift away from the calibration machinery.
+    clean_air_ratio: 3.6
+    note: >
+      The only model in the constants table with a tabulated H2S response.
+      Sulfur compounds and amines are the classic protein-spoilage headspace
+      markers, and MQ-136 is the channel that sees them.
+
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [NH4, CO2, Acetone, Toluene]
+    clean_air_ratio: 3.6
+    note: >
+      Ammonia carries the amine side of catabolism; CO2 is the respiration
+      signal that climbs as microbial load grows. The other two tabulated
+      targets (acetone, toluene) are ketone and aromatic-solvent responses and
+      are treated as corroboration rather than spoilage markers.
+
+  - id: mq2
+    model: MQ-2
+    role: supporting
+    targets: [Alcohol, CO, Propane]
+    clean_air_ratio: 9.83
+    note: >
+      Broad reducing-gas channel. Ethanol from fermentation and CO from
+      metabolism both move it, so it corroborates a trend rather than
+      identifying anything.
+
+  - id: mq8
+    model: MQ-8
+    role: supporting
+    targets: [H2, CH4, Alcohol]
+    clean_air_ratio: 70.0
+    note: >
+      Hydrogen from fermentation and gut-like metabolism, alcohol from
+      fermentation. High selectivity for H2 makes it the most specific channel in
+      this array even though H2 is not a spoilage marker on its own.
+
+# Temperature is context, never a sensor channel: it is preserved as metadata
+# and is never scored as a channel (CONTEXT_COLUMN_HINTS in opensmell.types).
+# It matters here because a cold-chain excursion and a bacterial bloom look the
+# same on the gas channels alone.
+context_columns: [temperature]
+
+# No `temporal`, no `decay`: unresolvable at 60 s (see cadence_rationale).
+# `absolute` is the level, `health` is the trend and the noise floor, and
+# `selectivity` is the only way a spoilage pattern is told apart from a uniform
+# baseline shift — which is also what a fridge-door or compressor fault looks
+# like.
+feature_groups: [absolute, health, selectivity, global]
+
+baseline:
+  # HARDWARE.md, "Baseline Collection": collect a 30-minute baseline in clean
+  # air before first calibration. At this cadence that is 30 samples.
+  duration_s: 1800
+  # HARDWARE.md, "Sensor Heater Timing": about 5 minutes once the element is
+  # already running. A cold element gives a settling period that means nothing.
+  settling_s: 300
+  # HARDWARE.md: a new MOX element needs 24-48 h before it is trustworthy. The
+  # long end of the documented range is used because an R0 taken too early is
+  # the most common way a fresh unit reads permanently drifted.
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. A
+    cold-storage unit drifts slowly and should stay re-anchorable — GradualDrift
+    is a correctable verdict, and a cold chain makes an unplanned element swap
+    expensive. drift_abs_floor is in the units of the recorded series and must
+    be re-derived per rig.
+
+false_alarm_budget:
+  # Judgement target, not a measured operating point. ~1 prompt every 5 days.
+  alarms_per_day: 0.2
+  rationale: >
+    A fridge unit that cries wolf gets ignored, and an ignored spoilage alarm is
+    worse than no alarm. One prompt per unit every five days is what a store
+    manager will actually act on; tighter and the unit gets muted, looser and
+    the signal does not get acted on either. This is a target to measure
+    against, not a figure the SDK can predict.
+
+provisional:
+  - false_alarm_budget.alarms_per_day
+
+notes: >
+  No spoilage classifier ships with this preset, and no field in it is a
+  performance claim. `absolute.calibrated_concentration` is only a
+  concentration once `sensor.calibration` carries measured (a, b) for this rig;
+  without it the extractor falls back to the nominal (1.0, -0.5) power law and
+  the value is a unitless transform, not a ppm. The thresholds describe the
+  health of the array, not the freshness of the food.
+
+  ETHYLENE, THE USUAL RIPENESS MARKER, IS NOT HERE. Ethylene drives ripening in
+  climacteric produce and no model in the offline constants table has a
+  tabulated ethylene response, so no channel here reads it: this preset sees
+  catabolism and fermentation, not the hormone. Anything that depends on the
+  ripening curve itself is out of reach of this array as configured.

@@ -1,0 +1,124 @@
+# gas_purity_contamination — qualification of a supplied gas against its
+# contaminants.
+#
+# A bench procedure, not a deployment. There is no false-alarm budget because
+# nothing is paged: the measurement is made once, by a person, against a
+# specification.
+
+id: gas_purity_contamination
+name: Gas purity and contamination
+description: >
+  Screen a supplied high-purity gas (N2, Ar, He, H2 or a process blend) for the
+  contaminants that actually cause failure downstream: water and hydrocarbons
+  oxidising a catalyst, CO poisoning it, H2S and NH3 poisoning a scrubber or a
+  fuel cell. Produces a per-contaminant channel response against a
+  specification limit that the user supplies. It does not produce a purity
+  figure in ppm.
+
+sensor_type: mox
+
+# 1 Hz. The measurement here is a purge-and-steady bench procedure: gas is
+# switched through the headspace and the array watches the transition. 1 Hz
+# gives a 2 s resolution floor, which resolves a purge step cleanly.
+# NEEDS EMPIRICAL VALIDATION: the choice is reasoned from the procedure, not
+# measured on a purity rig, and a slower cadence (0.1-1 Hz) may well suffice.
+cadence_hz: 1
+cadence_rationale: >
+  Qualification is a purge-and-steady procedure: the gas is switched through the
+  headspace and the array watches the transition, so the cadence has to resolve
+  a purge step. 1 Hz gives a 2 s floor and is the rate of the corpora already in
+  the workspace. That it is faster than necessary is likely — the figure is
+  reasoned from the procedure and has not been measured on a purity rig.
+
+sensors:
+  - id: mq136
+    model: MQ-136
+    role: primary
+    targets: [H2S, NH4, CO]
+    clean_air_ratio: 3.6
+    note: >
+      The contaminants that destroy a scrubber, a fuel-cell anode or a
+      hydrotreater, and the only model in the table with a tabulated H2S
+      response. Highest priority in this preset.
+
+  - id: mq7
+    model: MQ-7
+    role: primary
+    targets: [CO, H2, CH4]
+    clean_air_ratio: 27.5
+    note: >
+      CO is the single most damaging trace contaminant for most catalyst
+      processes. It also cross-responds strongly to H2, which is a problem when
+      the carrier gas *is* hydrogen — see the notes below.
+
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [CO2, NH4, Toluene, Acetone]
+    clean_air_ratio: 3.6
+    note: >
+      CO2 and ammonia as trace contaminants, and the ketone/aromatic responses
+      that stand in for hydrocarbon contamination when there is no dedicated
+      channel for it.
+
+  - id: mq8
+    model: MQ-8
+    role: supporting
+    targets: [H2, CH4, Alcohol]
+    clean_air_ratio: 70.0
+    note: >
+      Hydrogen as a contaminant in its own right, and the highest-selectivity
+      channel available for it.
+
+  - id: mq9
+    model: MQ-9
+    role: supporting
+    targets: [CO, LPG, CH4]
+    clean_air_ratio: 9.6
+    note: >
+      A second CO path. Cross-checking CO against an independent element matters
+      more here than anywhere else, because CO is the answer most likely to be
+      wrong.
+
+# The measurement is a transition, so the kinetic groups are requested.
+feature_groups: [device_agnostic, absolute, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. Between
+    measurements the array sits on one baseline and is expected to drift a
+    little; GradualDrift is the correct verdict and re-anchoring is permitted
+    only on Normal and GradualDrift, which is exactly right for a rig that is
+    re-baselined before each run.
+
+provisional:
+  - cadence_hz
+
+notes: >
+  No false-alarm budget is set, deliberately: this is a bench measurement made
+  once by a person against a specification, so a per-day alarm rate has no
+  meaning. What replaces it is a specification limit the user must supply from
+  the process, plus the decision of whether a channel response is over it.
+
+  PURITY IN ppm IS NOT AVAILABLE FROM THIS PRESET. A channel response is a
+  resistance ratio, not a concentration. Converting one to the other requires
+  the sensor power law R/R0 = a·C^b with (a, b) measured on this rig for this
+  substance (reference-point calibration, §4.6) — datasheet constants do not
+  transfer across rigs, and the SDK's own cross-device calibration check degrades
+  from 47% to 33% error. Until `sensor.calibration` carries measured (a, b),
+  `absolute.calibrated_concentration` is a unitless transform of the nominal
+  (1.0, -0.5) power law and must not be quoted as ppm.
+
+  CARRIER-GAS CAVEAT. If the gas under test is hydrogen, the CO channel is
+  compromised: MQ-7's tabulated response to H2 is as strong as its response to
+  CO. Run a hydrogen blank through the same protocol and subtract it, or do not
+  use mq7 for CO on a hydrogen carrier.

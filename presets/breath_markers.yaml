@@ -1,0 +1,140 @@
+# breath_markers — volatile markers in exhaled breath, alcohol included.
+#
+# Read the whole notes block before deploying this. A MOX array is not a
+# breathalyzer and must never be presented as one.
+
+id: breath_markers
+name: Breath markers including alcohol
+description: >
+  Detect volatile markers in exhaled breath: ethanol, acetone and ammonia as
+  metabolic markers, with hydrogen from gut and oral metabolism and CO as a
+  smoke-exposure marker. Suitable for screening and for trending a subject's own
+  readings over time. It is not an evidential measurement, not a diagnosis, and
+  not a substitute for a certified instrument.
+
+sensor_type: mox
+
+# 10 Hz. A breath measurement is a short exhalation followed by a purge, and the
+# quantity of interest is the onset and the peak of the response, so the
+# cadence has to be fast enough to place those in time.
+# NEEDS EMPIRICAL VALIDATION: the reference rig's 2 Hz production cadence gives a
+# 1 s floor, which may well be enough for MOX chemistry. 10 Hz is chosen because
+# the kinetics rate is documented for the firmware, not because a faster reading
+# has been shown to detect alcohol sooner.
+cadence_hz: 10
+cadence_rationale: >
+  The measurement is a transient — exhalation, hold, purge — so onset and peak
+  have to be placed in time, which argues for the 10 Hz kinetics rate that
+  HARDWARE.md documents for the firmware. That MOX chemistry actually needs this
+  is unproven: at the reference rig's 2 Hz production cadence the resolution
+  floor is 1 s, which is probably still faster than the element responds. The
+  honest statement is that 10 Hz is available and defensible, not that it is
+  required.
+
+sensors:
+  - id: mq3
+    model: MQ-3
+    role: primary
+    targets: [Alcohol, Benzene, Hexane, CO]
+    clean_air_ratio: 60.0
+    note: >
+      The most alcohol-responsive channel in the constants table and the
+      designated alcohol path. Also the highest clean-air ratio in the array, so
+      it is the most sensitive to a small absolute change.
+
+  - id: mq8
+    model: MQ-8
+    role: primary
+    targets: [Alcohol, H2, CH4]
+    clean_air_ratio: 70.0
+    note: >
+      A second alcohol channel plus hydrogen, which is a gut-fermentation marker
+      and therefore the channel that makes this preset more than an alcohol
+      meter. Two independent alcohol paths is deliberate: on a single-element
+      measurement the difference between subject and sensor is invisible.
+
+  - id: mq2
+    model: MQ-2
+    role: primary
+    targets: [Alcohol, CO, Propane, LPG]
+    clean_air_ratio: 9.83
+    note: >
+      The third alcohol path. Three channels with a tabulated alcohol response
+      is the most this reference BOM can offer, and their disagreement is the
+      array's internal consistency check.
+
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [Acetone, NH4, CO2, Alcohol]
+    clean_air_ratio: 3.6
+    note: >
+      Acetone is the classic low-insulin / ketoacidosis marker and ammonia the
+      classic renal-impairment marker. Both are screening indicators whose
+      clinical meaning is a matter for a clinician, not for this preset.
+
+  - id: mq136
+    model: MQ-136
+    role: supporting
+    targets: [NH4, H2S, CO]
+    clean_air_ratio: 3.6
+    note: >
+      An independent ammonia path, so the mq135 ammonia response can be checked
+      against an element with different chemistry.
+
+  - id: mq7
+    model: MQ-7
+    role: supporting
+    targets: [CO, H2]
+    clean_air_ratio: 27.5
+    note: >
+      Carboxyhemoglobin as a smoking-exposure marker. Strongly cross-sensitive to
+      H2, so it only means something when the hydrogen channels are quiet — the
+      same interference that makes this channel useful in
+      gas_purity_contamination's hydrogen-carrier case dangerous.
+
+# Transients are the measurement, so the kinetic and decay groups are requested.
+feature_groups: [device_agnostic, absolute, temporal, decay, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. A
+    between-subject rig is re-baselined between measurements, so gradual drift
+    should remain correctable; a rig that condemns its own channels between
+    subjects would stop producing data at all.
+
+provisional:
+  - cadence_hz
+
+notes: >
+  No false-alarm budget is set, deliberately: a breath test is a per-subject
+  measurement, not a continuously paged monitor, so a per-day alarm rate has no
+  meaning.
+
+  NOT AN EVIDENTIAL BREATHALYZER. A MOX array has no certified selectivity, no
+  certified response time and no ethanol-specific channel — the three alcohol
+  channels here are broad reducing-gas elements that respond to ethanol among
+  other things. Alcohol in the mouth, acetone, and cleaning solvent on the
+  subject all move them. Anything with legal or safety consequences must come
+  from a certified instrument; this preset supports screening and self-tracking
+  only.
+
+  NOT A DIAGNOSIS. The metabolic markers listed here are screening indicators.
+  Their interpretation, and any clinical action, belongs to a clinician. No
+  figure in this file is a sensitivity, specificity or accuracy claim.
+
+  CONCENTRATIONS. `absolute.calibrated_concentration` is a concentration only
+  once `sensor.calibration` carries measured (a, b) for this rig and this
+  substance. Breath is close to saturated water vapour at 37 C, so the humidity
+  excursion of a breath sample is far outside the range a baseline collected in
+  ambient air represents; treat the first samples of an exhalation as suspect
+  unless a per-subject baseline was collected the same way.

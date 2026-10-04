@@ -1,0 +1,160 @@
+# gas_leak_fire_smoke — fuel-gas, smoke and CO detection for an unattended site.
+#
+# The only preset here whose failure mode is a missed event rather than a
+# missed trend, so it is also the only one that tightens a threshold. That
+# tightening is a judgement and is listed as provisional.
+
+id: gas_leak_fire_smoke
+name: Gas leak, fire and smoke
+description: >
+  Continuous monitoring for combustible gas, smoke and carbon monoxide in an
+  unattended space. The array is arranged as detection, not classification:
+  two dedicated combustible channels, one CO channel with a second, independent
+  CO path, and hydrogen for the pyrolysis step that precedes flaming
+  combustion. A verdict of GradualDrift is actionable here; Poisoning and Dead
+  are not, and the threshold block says so.
+
+sensor_type: mox
+
+# 10 Hz — the kinetics cadence the reference firmware builds for
+# (HARDWARE.md, "Sampling Rates"; the firmware refuses intervals below 10 ms).
+#
+# At 10 Hz the shortest resolvable event is 200 ms, which is two orders of
+# magnitude faster than the second-scale chemistry of a MOX element. So the
+# alarm latency here is chemistry-bound, not cadence-bound: the reason to sample
+# faster than the 2 Hz production rate is to pin down the *onset* of a transient
+# and to give `temporal` features a meaningful time base, not to detect the gas
+# sooner. Whether 10 Hz actually buys anything over the reference rig's 2 Hz
+# production cadence has not been measured — see provisional.
+cadence_hz: 10
+cadence_rationale: >
+  HARDWARE.md documents 10 Hz as the kinetics rate of the reference rig and the
+  firmware's static_assert rejects anything below 10 ms. Chosen over the 2 Hz
+  production rate because a 200 ms resolution floor pins down transient onset
+  and gives the temporal and decay groups a real time base. MOX chemistry is
+  second-scale, so detection latency is expected to be chemistry-bound either
+  way; that expectation is untested on this hardware.
+
+sensors:
+  - id: mq2
+    model: MQ-2
+    role: primary
+    targets: [LPG, Propane, CO, Alcohol]
+    clean_air_ratio: 9.83
+    note: >
+      The broadest reducing-gas channel in the reference array. LPG and
+      propane are the commonest domestic fuel gases, and smoke is a reducing
+      gas too, so one channel covers the fuel and the fire.
+
+  - id: mq4
+    model: MQ-4
+    role: primary
+    targets: [CH4, LPG, Smoke]
+    clean_air_ratio: 4.4
+    note: >
+      Methane for natural gas. The only model in the table besides MQ-2 with a
+      tabulated Smoke response, which makes it the second, independent path to
+      the fire signal — a single smoke-sensitive element failing is then visible
+      as a divergence between mq2 and mq4 rather than as silence.
+
+  - id: mq5
+    model: MQ-5
+    role: primary
+    targets: [CO, LPG, CH4, H2]
+    clean_air_ratio: 6.5
+    note: >
+      The combined combustible/CO channel: one element that sees CO and fuel
+      gas together, which is what an incomplete-combustion event looks like
+      before a flame is visible.
+
+  - id: mq7
+    model: MQ-7
+    role: primary
+    targets: [CO, H2, CH4]
+    clean_air_ratio: 27.5
+    note: >
+      The dedicated CO channel, cross_checked against mq5. CO is the gas with
+      the least forgiving exposure limit in this preset, so it gets two
+      elements reading it through different sensing materials.
+
+  - id: mq8
+    model: MQ-8
+    role: supporting
+    targets: [H2, CH4, Alcohol]
+    clean_air_ratio: 70.0
+    note: >
+      Hydrogen, which rises during pyrolysis before flaming combustion. Lead
+      time rather than a detection channel, and the strongest single-gas
+      selectivity in the reference BOM.
+
+  - id: mq9
+    model: MQ-9
+    role: cross_sensitivity
+    targets: [CO, LPG, CH4]
+    clean_air_ratio: 9.6
+    note: >
+      Third combustible/CO path. Present so that a disagreement between mq4,
+      mq5 and mq9 is interpretable: one drifting element produces a split
+      verdict, two agreeing against one produces a probable fault.
+
+# Six channels, the canonical reference array. This is deliberately NOT the
+# BOM in HARDWARE.md (MQ-3, MQ-135, MQ-7, MQ-8, MQ-4, MQ-2): the ethanol and
+# broad-VOC slots add nothing to a fuel-gas alarm and cost two elements that
+# fuel and CO need. Changing the array changes the effective dimensionality of
+# the rig (opensmell.hardware.effective_dims), so this is a real choice, not a
+# cosmetic one.
+feature_groups: [device_agnostic, temporal, health, hardware, saturation, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+  # The 30-minute baseline is quoted from HARDWARE.md, and at 10 Hz it resolves
+  # to 18000 R0 samples per channel. That is the honest cost of this cadence,
+  # and it is stated rather than left for a reader to multiply out: how much of
+  # that window the firmware has to hold depends on how collectBaseline() is
+  # implemented, which this workspace does not document. NEEDS EMPIRICAL
+  # VALIDATION as a hardware claim.
+
+thresholds:
+  # Halved from the SDK default of 0.02. NEEDS EMPIRICAL VALIDATION.
+  dead_noise_ceiling: 0.01
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    dead_noise_ceiling is halved from the SDK default (0.02) because a channel
+    that has stopped responding must be caught while its scatter is still
+    small: on an unattended unit the cost of a false "replace the sensor" is one
+    maintenance visit, while the cost of a silently dead channel inside a gas
+    alarm is a missed event. The two drift thresholds are left at the SDK
+    defaults — a fuel-gas loop must not quietly re-anchor its own reference.
+    The halving is a judgement about consequences, not a measurement.
+
+false_alarm_budget:
+  # Judgement target, not a measured operating point. 0.14/day is ~1 per week.
+  alarms_per_day: 0.14
+  rationale: >
+    Life safety tolerates nuisance alarms far better than it tolerates a missed
+    one, so the budget is looser here than anywhere else in this suite: about
+    one call per week per site. Alarm fatigue is still the failure mode to fear
+    — an operator who learns that a weekly call is usually nothing stops
+    answering the next one. The only false-alarm criterion with evidence behind
+    it in this workspace is opensmell-rs/src/bin/mc_sweep.rs ("<= 1/month at
+    TPR >= 0.9"), and that is a synthetic-replay result, not a field
+    measurement.
+
+provisional:
+  - cadence_hz
+  - thresholds.dead_noise_ceiling
+  - false_alarm_budget.alarms_per_day
+
+notes: >
+  A MOX array is a screening instrument, not a certified gas detector: it has no
+  certified response time, no certified selectivity and no interferences
+  certificate, and nothing in this preset changes that. Deploy it as an early
+  warning that calls a person, alongside — never instead of — a certified
+  detector where one is required. `hardware` is requested here specifically so
+  that an ADC or supply fault can be told apart from a gas event, and
+  `saturation` so a channel pinned at the converter rail is visible rather than
+  silently reporting a smaller event.

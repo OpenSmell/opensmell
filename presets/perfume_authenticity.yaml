@@ -1,0 +1,119 @@
+# perfume_authenticity — comparative headspace measurement of a fragrance.
+#
+# A measurement protocol, not an alarm: there is no false-alarm budget, and the
+# output is a response pattern to be compared against a reference, not a verdict.
+
+id: perfume_authenticity
+name: Perfume authenticity
+description: >
+  Compare a fragrance against a reference formulation from its headspace
+  signature: the ethanol carrier, the ketone and aromatic notes, and the ratio
+  pattern between channels. The discriminating work is done by a model trained on
+  matched headspace samples; this preset supplies the acquisition configuration
+  such a model needs and nothing else.
+
+sensor_type: mox
+
+# 1 Hz. The measurement is a static headspace sample, so there is no transient to
+# resolve — what matters is that the sample has equilibrated and that the
+# replicate-to-replicate scatter is small compared with the difference between
+# formulations. 1 Hz gives plenty of samples inside an equilibration period.
+# NEEDS EMPIRICAL VALIDATION: the figure is convenient rather than required, and
+# a slower cadence would work if equilibration is confirmed by other means.
+cadence_hz: 1
+cadence_rationale: >
+  A headspace measurement is static once equilibrated, so the cadence is not
+  chosen for resolution. 1 Hz accumulates many samples inside the equilibration
+  period without inflating the file, and matches the acquisition rate of the
+  corpora already in the workspace. Any figure in this range would do provided
+  equilibration is established independently; 1 Hz is convenient, not required.
+
+sensors:
+  - id: mq3
+    model: MQ-3
+    role: primary
+    targets: [Alcohol, Benzene, Hexane, CO]
+    clean_air_ratio: 60.0
+    note: >
+      The carrier alcohol dominates any fragrance headspace, so the most
+      alcohol-sensitive channel is the right one to characterise first. Its
+      benzene and hexane responses carry the top and heart notes as far as a
+      metal-oxide array can see them.
+
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [Toluene, Acetone, Alcohol, CO2]
+    clean_air_ratio: 3.6
+    note: >
+      Aromatics and ketones, which is where most of the formulation's
+      discriminating volatiles sit for a metal-oxide array. The broadest channel
+      in the reference BOM and the array's canary for a general shift.
+
+  - id: mq8
+    model: MQ-8
+    role: supporting
+    targets: [Alcohol, H2, CH4]
+    clean_air_ratio: 70.0
+    note: >
+      A second alcohol path and the highest-selectivity channel in the array, so
+      the replicate scatter of the ethanol reading is visible.
+
+  - id: mq2
+    model: MQ-2
+    role: supporting
+    targets: [Alcohol, CO, LPG, Propane]
+    clean_air_ratio: 9.83
+    note: >
+      Third broad reducing-gas path, for the same reason: on a single-element
+      measurement a drifting sensor and a different formulation are the same
+      observation.
+
+context_columns: [temperature, humidity]
+
+# The kinetic groups are in because equilibration is itself a kinetics question:
+# sampling before the headspace stabilises measures the ramp, not the perfume.
+feature_groups: [device_agnostic, absolute, temporal, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  # 30 minutes of settling before the sample is treated as equilibrated.
+  # NEEDS EMPIRICAL VALIDATION — this is the one protocol figure in this preset
+  # that is not taken from HARDWARE.md, because headspace equilibration is a
+  # property of the fragrance, the vial and the temperature rather than of the
+  # sensor. Establish it from the decay curve for each formulation.
+  settling_s: 1800
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. They
+    describe the health of the array between samples, which is the only
+    threshold a bench rig needs: the authenticity decision is comparative and is
+    made by a trained model, not by crossing a threshold here.
+
+provisional:
+  - baseline.settling_s
+  - cadence_hz
+
+notes: >
+  No false-alarm budget is set, deliberately: this is a bench comparison made by
+  a person, not a continuously paged monitor.
+
+  This preset ships no classifier and asserts no accuracy. A perfume
+  authenticity claim needs a model trained on matched, equilibrated headspace
+  samples of known formulations, with the recording-fair grouping the
+  e-nose-evals harness enforces (no window from one sample in both the train and
+  test folds) and the null baseline reported in the same table as the headline.
+  A raw channel response cannot distinguish a genuine reformulation from a
+  different vial, a different room temperature or a dirty sensor, which is why
+  `context_columns` and the ratio features matter as much as the levels.
+
+  Fragrance work also has a laboratory-hygiene constraint that outranks the
+  chemistry: an array that has been in a scented room carries that scent in its
+  own desorption history. Run blanks between samples; the SDK has no correction
+  for a contaminated headspace, and neither does any model trained on one.

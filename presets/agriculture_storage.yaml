@@ -1,0 +1,161 @@
+# agriculture_storage — early detection of spoilage and pest damage in stored
+# produce.
+#
+# Sits deliberately between food_freshness and pest_rodent_detection. Grain and
+# produce in a store carry a microbial signature (fungus_damp is the sibling
+# preset for the building structure) and an insect signature, which is what
+# separates this use case from a domestic fridge.
+
+id: agriculture_storage
+name: Agriculture and storage
+description: >
+  Detect spoilage and pest damage in stored agricultural produce — grain,
+  potatoes, onions, dried beans, stored fruit — from the volatile signature of
+  fungal growth and of storage insects. Intended for monitoring a store or a
+  silo over weeks, where the question is when a lot is beginning to go off rather
+  than whether a single item is ripe.
+
+sensor_type: mox
+
+# One sample per minute. Storage spoilage develops over weeks, and a
+# store-and-forget unit must run a full season on its power budget.
+# NEEDS EMPIRICAL VALIDATION — no stored-produce recording at this cadence
+# exists in the workspace. Unlike food_freshness, which borrows its per-minute
+# cadence from a per-minute spoilage dataset, nothing here supports this figure;
+# it is a duty-cycle judgement for a season-long deployment.
+cadence_period_s: 60
+cadence_rationale: >
+  Storage spoilage and pest damage develop over weeks, so the cadence is set by
+  the season-long duty cycle rather than by event resolution. One sample per
+  minute keeps a whole season of history within a store-and-forget unit's power
+  and storage budget. NEEDS EMPIRICAL VALIDATION: no stored-produce recording in
+  this workspace was acquired at this rate, so unlike food_freshness this figure
+  is not borrowed from a dataset — it is a judgement about duty cycle.
+
+sensors:
+  - id: mq136
+    model: MQ-136
+    role: primary
+    targets: [H2S, NH4, CO]
+    clean_air_ratio: 3.6
+    note: >
+      The fungal channel: sulfur volatiles are the strongest documented marker of
+      storage mould, and ammonia is the second. Also the tabulated target of
+      penthiopyrad, the grain-preservation agent that dominates grain-store
+      practice, which makes this channel the one that has to be checked against
+      a chemical treatment record before a spoilage call is acted on.
+
+  - id: mq3
+    model: MQ-3
+    role: primary
+    targets: [Alcohol, Benzene, Hexane, CO]
+    clean_air_ratio: 60.0
+    note: >
+      Ethanol: the first thing a mouldy or fermenting grain pile produces, and
+      also the strongest documented response of the storage-insect marker this
+      array can see (sitophilus). At a per-minute cadence the respiration slope
+      over a week of sampling is what carries the signal, not any single reading.
+
+  - id: mq2
+    model: MQ-2
+    role: primary
+    targets: [Alcohol, CO, Propane]
+    clean_air_ratio: 9.83
+    note: >
+      A second alcohol path, deliberately: an ethanol rise is the first thing
+      that should be corroborated before anyone opens a silo.
+
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [CO2, NH4, Toluene, Acetone]
+    clean_air_ratio: 3.6
+    note: >
+      Respiration: CO2 is the direct measure of the living process consuming the
+      lot, and is the channel that keeps spoilage distinguishable from an inert
+      chemical taint.
+
+  - id: mq8
+    model: MQ-8
+    role: supporting
+    targets: [H2, CH4, Alcohol]
+    clean_air_ratio: 70.0
+    note: >
+      Anaerobic metabolism. A hydrogen and methane rise alongside ethanol is what
+      distinguishes a lot going bad from a lot merely fermenting normally.
+
+  - id: mq7
+    model: MQ-7
+    role: supporting
+    targets: [CO, H2, Alcohol]
+    clean_air_ratio: 27.5
+    note: >
+      A third alcohol path and the CO that accompanies heavy spoilage.
+
+  - id: mq9
+    model: MQ-9
+    role: supporting
+    targets: [CO, LPG, CH4]
+    clean_air_ratio: 9.6
+    note: >
+      Methane corroboration on an element independent of MQ-8.
+
+context_columns: [temperature, humidity]
+
+# Level and drift only: at 60 s the shortest resolvable event is 120 s. That is
+# adequate here because the signal is a slow slope, not an event.
+feature_groups: [absolute, health, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. A silo
+    sees large temperature swings across a season and a MOX baseline moves with
+    temperature, so gradual drift should stay correctable: GradualDrift is the
+    verdict that means "the environment moved", and re-anchoring on it is what
+    allows one unit to stay valid from August to March.
+
+false_alarm_budget:
+  # Judgement target, not a measured operating point. 0.07/day is ~1 per 2 weeks.
+  alarms_per_day: 0.07
+  rationale: >
+    A store manager can act on one report per bay per fortnight and cannot act on
+    one per day; the report has to be worth reading. The cadence supports weekly
+    sampling comfortably, which is the timescale at which a store actually
+    inspects. A grower running a tighter protocol can sample faster and tighten
+    this proportionally.
+
+provisional:
+  - cadence_period_s
+  - false_alarm_budget.alarms_per_day
+
+notes: >
+  NOT A SPECIES-LEVEL CALL. The array sees "alcohol rising, sulfur volatiles
+  rising, CO2 rising" and that pattern means a lot is going off or a colony of
+  something is growing in it. It does not name the organism, does not
+  distinguish fungal from bacterial spoilage, and cannot grade a lot for sale. A
+  grading decision needs an assay on the lot.
+
+  THE PEST CASE IS WEAKER THAN THE SPOILAGE CASE, and the difference is honest
+  and mechanical. For storage insects, the strongest documented response in this
+  whole reference table is MQ-136's response to sitophilus granarius, a
+  pheromone of the grain weevil — and that pheromone is active at
+  concentrations around 1 ppb, far below anything a metal-oxide array can
+  approach. So this preset's pest coverage is an ethanol response attributable to
+  an insect colony, corroborated by the mould channels, and not a pheromone
+  detection. pest_rodent_detection has the same structural limitation for urine
+  volatiles.
+
+  FUMIGANTS AND PRESERVATIVES ARE A CONFOUND, NOT AN EDGE CASE. Grain is stored
+  under chemicals by design — phosphine for insects, and penthiopyrad or
+  prochloraz for spoilage fungi — and both are well above this array's response
+  to any spoilage marker. Check the store's treatment record before acting on a
+  call, or the call will be the fumigation that was planned.

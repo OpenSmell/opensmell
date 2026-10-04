@@ -1,0 +1,126 @@
+# voc_air_quality — indoor air quality and VOC emission monitoring.
+#
+# Broad, non-specific by construction: the question is "has the composition of
+# this air changed, and in what direction", not "which molecule is it".
+
+id: voc_air_quality
+name: VOC emission and air quality
+description: >
+  Continuous indoor-air monitoring for volatile organic compounds, CO and
+  ammonia. A change in air composition is reported as a shift in the array's
+  response and in the ratios between channels, which is the only shape of answer
+  a broad MOX array can give. Identifying a specific VOC from this preset alone
+  is not supported.
+
+sensor_type: mox
+
+# 1 Hz. This is not a judgement call: both the SmellNet recordings (~1 Hz,
+# 6 channels) and the UCI-362 home-activity monitoring corpus (1 Hz, 8 Figaro
+# channels) are acquired at this rate, so features extracted under it are
+# directly comparable with the project's existing recordings and results.
+# IAQ events — cleaning products, cooking, a crowd — last minutes, so 1 Hz is
+# also comfortably faster than the events it has to resolve (2 s floor).
+cadence_hz: 1
+cadence_rationale: >
+  1 Hz is the acquisition rate of the corpora this workspace already scores
+  (SmellNet at ~1 Hz, UCI-362 at 1 Hz), so a recording made under this preset is
+  comparable with existing results rather than needing its own baseline. IAQ
+  events last minutes, so the 2 s resolution floor is far finer than the events
+  being watched.
+
+sensors:
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [CO2, NH4, Toluene, Acetone, CO, Alcohol]
+    clean_air_ratio: 3.6
+    note: >
+      The broadest channel in the reference BOM and the one that carries CO2,
+      which is the strongest single indicator of an occupied, stale or
+      poorly-ventilated room.
+
+  - id: mq3
+    model: MQ-3
+    role: primary
+    targets: [Alcohol, Benzene, Hexane, CO]
+    clean_air_ratio: 60.0
+    note: >
+      Ethanol plus the aromatic and solvent responses, which is the shape of
+      "someone sprayed something". The highest clean-air ratio in the array, so
+      it is the most sensitive to a small absolute change.
+
+  - id: mq7
+    model: MQ-7
+    role: primary
+    targets: [CO, H2, Alcohol]
+    clean_air_ratio: 27.5
+    note: >
+      Indoor CO. It is also the most valuable *interference* channel in the set:
+      a CO reading that rises alongside an alcohol response is usually a
+      ventilation event, not a CO event.
+
+  - id: mq2
+    model: MQ-2
+    role: supporting
+    targets: [LPG, CO, Alcohol, Propane]
+    clean_air_ratio: 9.83
+    note: >
+      Cooking gas and combustion products. Its job here is corroboration of a
+      kitchen event, not specificity.
+
+  - id: bme680
+    model: BME680
+    role: supporting
+    # No clean_air_ratio is declared: the constants table records BME680 as
+    # power_law_calibratable=false with no tabulated gases and no datasheet
+    # Rs/R0, so there is nothing for the loader to verify a ratio against. The
+    # channel is usable as a relative VOC response only.
+    note: >
+      Raw MOX gas resistance in kOhm with humidity compensation on-chip.
+      Relative-response channel: Bosch publishes no per-gas power law for it, so
+      it contributes to the array's response pattern and never to a ppm figure.
+      Its on-chip humidity compensation also makes it the least useful channel
+      for damp-related work — see mould_damp.
+
+context_columns: [temperature, humidity, pressure]
+
+feature_groups: [device_agnostic, absolute, temporal, health, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. An IAQ
+    unit runs for months unattended, so gradual drift must stay correctable —
+    the alternative is a re-anchor routine that spends its life rescuing a
+    healthy array. Note that a humid room drives MOX baselines around far more
+    than a dry one, which is why humidity is a context column and why
+    drift_abs_floor should be re-derived per site rather than inherited.
+
+false_alarm_budget:
+  # Judgement target, not a measured operating point. ~1 per 2 days.
+  alarms_per_day: 0.5
+  rationale: >
+    IAQ has no safety consequence, so a nuisance alert costs only irritation and
+    the user's patience — which means this suite can afford a much tighter
+    budget than gas_leak_fire_smoke. About one prompt every two days is what a
+    building operator will read; a per-hour prompt is not read at all.
+
+provisional:
+  - false_alarm_budget.alarms_per_day
+
+notes: >
+  "VOC" here means a change in the response of a broad metal-oxide array, which
+  is not the same measurement as TVOC in ppb and must not be reported as one.
+  A channel such as SGP30 or SGP40, which output a vendor-processed VOC index,
+  cannot be substituted for a MOX resistance channel here: the feature groups
+  requested below are extracted per channel from a resistance series.
+  `absolute.calibrated_concentration` is a concentration only once
+  `sensor.calibration` holds measured (a, b) for the rig.

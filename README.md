@@ -217,6 +217,43 @@ canonical six channels (`91` at three, `406` at twelve). Rs/R₀ normalization c
 RL in the ratio; it does not cancel the sensor constants (a, b), so cross-device transfer
 requires per-rig reference-point calibration.
 
+## Configuration presets
+
+Twelve use cases ship as YAML in [`presets/`](presets/): the channel list, the feature
+groups to compute, the baseline protocol, the anomaly thresholds and — where a monitor
+paged on a schedule — a false-alarm budget. Each file states why its sensors and its
+cadence were chosen, and marks every figure the author could not stand behind in
+`provisional:`.
+
+```python
+import opensmell
+
+opensmell.list_presets()             # 12 ids
+preset = opensmell.load_preset("gas_leak_fire_smoke")
+
+preset.sampling_rate_hz              # 10.0  — mandatory, never defaulted
+preset.sensors                       # [mq2, mq4, mq5, mq7, mq8, mq9] with roles
+preset.r0_samples                    # baseline length at this cadence: 18000
+preset.advisories()                  # non-fatal observations, e.g. cadence_below_1hz
+preset.to_sensor_descriptor()        # the array as a .osmell SensorDescriptor
+```
+
+```console
+$ opensmell-presets list
+$ opensmell-presets show food_freshness
+$ opensmell-presets validate --strict      # advisories become failures
+$ opensmell-presets field gas_leak_fire_smoke sensors[3].model
+```
+
+The loader is strict on purpose: a missing or non-positive cadence, an unknown feature
+group, a target gas the constants table does not hold for that model, a declared Rs/R₀
+that disagrees with `sensors.json`, a threshold tuned without a stated basis, or a
+`provisional:` entry that resolves to nothing all raise with the file and field named.
+Advisories are the opposite case — a real observation that is not a reason to refuse,
+such as a per-minute cadence whose 120 s resolution floor makes the kinetic feature
+groups meaningless. Presets are searched in `$OPENSMELL_PRESETS_DIR`, the source tree,
+the package, then `<prefix>/share/opensmell/presets`.
+
 ## CSV convenience functions
 
 The thin CSV short-hands wrap the same extractor as the `.osmell` path (they are not a

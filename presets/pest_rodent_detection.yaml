@@ -1,0 +1,135 @@
+# pest_rodent_detection — the volatile signature of an infestation.
+#
+# Scouting/surveillance use. Two honest limits are stated up front in the notes:
+# urine is denatured on dry surfaces within minutes, so this detects fresh
+# activity and not old trails; and a rat in a wall is as likely to be found by
+# this array as a sealed gas bottle, so it is a screening tool only.
+
+id: pest_rodent_detection
+name: Pest and rodent detection
+description: >
+  Screen for the volatile signature of an active infestation — rodent and insect
+  urine, faecal and alarm pheromone compounds — in wall voids, under appliances,
+  in storage and around ductwork. Reports an infestation-style response pattern
+  that a technician investigates. Reports no species, and does not distinguish a
+  pest from a trapping gas, a rodenticide or a scented product.
+
+sensor_type: mox
+
+# 10 Hz. Patrol-style deployment: a long-running low-duty cycle through a fixed
+# set of points, where the question is whether a point smells wrong and how
+# strongly. A fast cadence is not needed for that question.
+# NEEDS EMPIRICAL VALIDATION: a large share of a real patrol deployment is the
+# ten seconds or so of heater warm-up at each point, not the sampling, and this
+# preset's baseline length assumes a dwell long enough for the element to settle.
+# That dwell has not been measured for this chemistry and may well need to be
+# longer than the settling time documented in HARDWARE.md. 10 Hz is also chosen
+# partly to make the sampler duty cycle low.
+cadence_hz: 10
+cadence_rationale: >
+  The cadence here is not chosen for detecting anything — it is chosen for
+  duty cycle. A patrol unit spends most of its time settling after the heater
+  turns on at each point, and a fast cadence shortens the sampling portion of
+  that. What actually constrains a patrol deployment is the warm-up dwell at
+  each point, which is far longer than the sampling and is not set by this file.
+  10 Hz also resolves a scout arriving at a point rather than a static check,
+  which is the access pattern most pest services actually use.
+
+sensors:
+  - id: mq136
+    model: MQ-136
+    role: primary
+    targets: [NH4, H2S, CO]
+    clean_air_ratio: 3.6
+    note: >
+      The decisive channel: ammonia is the strongest single component of
+      rodent urine, and this is the only model in the constants table with a
+      tabulated H2S response for the sulfur volatiles that accompany it.
+
+  - id: mq2
+    model: MQ-2
+    role: primary
+    targets: [Alcohol, CO, LPG]
+    clean_air_ratio: 9.83
+    note: >
+      The dominant ethanol path for rodent urine and for the faecal and
+      regurgitation signature. Alcohol and ammonia arriving together is the
+      combination this preset is built around.
+
+  - id: mq3
+    model: MQ-3
+    role: primary
+    targets: [Alcohol, Benzene, Hexane, CO]
+    clean_air_ratio: 60.0
+    note: >
+      A second alcohol path plus aromatic responses that mark a heavy infestation.
+      Two alcohol channels is the minimum for calling this at all: a single one
+      is equally consistent with a chemical spill.
+
+  - id: mq7
+    model: MQ-7
+    role: supporting
+    targets: [CO, H2, Alcohol]
+    clean_air_ratio: 27.5
+    note: >
+      A third alcohol path plus CO, which accompanies heavy soiling.
+
+  - id: mq135
+    model: MQ-135
+    role: supporting
+    targets: [NH4, CO2, Acetone]
+    clean_air_ratio: 3.6
+    note: >
+      A second ammonia path on different chemistry, so the mq136 ammonia response
+      has something to be checked against.
+
+context_columns: [temperature, humidity]
+
+feature_groups: [device_agnostic, temporal, decay, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. Scouting
+    units should have a high baseline margin: a field unit that flags ordinary
+    household volatiles as activity gets ignored, and an ignored unit reports
+    nothing at all. Per-point baselines are the practical alternative to a global
+    one for a patrol rig.
+
+provisional:
+  - cadence_hz
+
+notes: >
+  No false-alarm budget is set, deliberately: a patrol unit produces a report per
+  inspection point, not a paged alarm, so a per-day rate has no meaning.
+
+  ONLY FRESH ACTIVITY. Urine is denatured on a dry surface within minutes, so
+  what this array sees is the fresh volatile plume, not the trail. An old
+  infestation with no current traffic can be completely invisible to it. That is
+  a property of the chemistry, not of the sensor, and no amount of data collection
+  on this array changes it.
+
+  NOT SPECIES-IDENTIFYING, AND EASILY FOOLED. A rat in a cavity can be found by
+  this array as readily as a gas bottle, a rodenticide, a scented litter or an
+  aerosol. A call here means "something chemical is here — go and look", and the
+  technician, not this preset, decides what it was.
+
+  Neither the ammonia-plus-alcohol combination nor any other signature in this
+  file has been validated against a labelled infestation dataset, and no
+  sensitivity, specificity or detection limit is claimed. Confirming that this
+  preset works at all requires a controlled study with known, dated infestations
+  and known negative sites; until then it is a configuration to experiment with,
+  not a detector to deploy on the strength of this file.
+
+  Humidity matters more here than in most presets in this family: damp voids
+  preserve the volatiles and dry ones destroy them, so a dry season lowers what
+  this preset can possibly see for reasons that have nothing to do with the
+  infestation being absent.

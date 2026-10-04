@@ -1,0 +1,120 @@
+# cleaning_verification — check that a surface was cleaned, by the gas it should
+# no longer be giving off.
+#
+# The pattern is the same everywhere in this family: react to what the task
+# created, then watch it come off the surface.
+
+id: cleaning_verification
+name: Cleaning verification
+description: >
+  Verify that a surface has been cleaned, and that cleaning is working, by
+  measuring the volatile load a surface retains and the rate at which it
+  reappears after wiping: alcohol from an alcohol-based cleaner, acetone and
+  solvent aromatics, and ammonia from a floor cleaner. Suits a before/after or
+  versus-reference comparison, which is what the array can actually support.
+
+sensor_type: mox
+
+# 10 Hz. A cleaning check turns on measurement duration: the cleaner is applied,
+# the surface is wiped, and the decay back to background is watched. The rate of
+# that decay is the measurement, so the cadence sets how well it can be resolved.
+# NEEDS EMPIRICAL VALIDATION — the reference rig's 2 Hz production cadence gives a
+# 1 s floor, which may well be sufficient. 10 Hz is chosen because decay
+# resolution is the point and because the rate is documented for the firmware.
+cadence_hz: 10
+cadence_rationale: >
+  The measurement is the decay after wiping, so what is being resolved is a
+  rate, and a finer cadence resolves a faster decay. 10 Hz is the kinetics rate
+  documented in HARDWARE.md. Whether 10 Hz is needed over the 2 Hz production
+  cadence is untested for this surface chemistry — at 2 Hz the resolution floor
+  is 1 s, which may resolve a wipe-down decay perfectly well. The honest claim is
+  that 10 Hz buys decay resolution, not that it is required.
+
+sensors:
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [Alcohol, Acetone, Toluene, CO2]
+    clean_air_ratio: 3.6
+    note: >
+      The alcohol and solvent responses that dominate any surface cleaner, on the
+      broadest element available.
+
+  - id: mq3
+    model: MQ-3
+    role: primary
+    targets: [Alcohol, Hexane, Benzene, CO]
+    clean_air_ratio: 60.0
+    note: >
+      The dedicated alcohol path, and the most sensitive channel in the array. It
+      is the one that turns "did the cleaner go on" from a guess into a reading.
+
+  - id: mq8
+    model: MQ-8
+    role: supporting
+    targets: [Alcohol, H2, CH4]
+    clean_air_ratio: 70.0
+    note: >
+      A second alcohol path with different chemistry, so a residue reading does
+      not rest on one element.
+
+  - id: mq2
+    model: MQ-2
+    role: supporting
+    targets: [Alcohol, CO, LPG, Propane]
+    clean_air_ratio: 9.83
+    note: >
+      Third broad reducing-gas path, and the one most affected by the isopropanol
+      used in hospital and food settings.
+
+  - id: mq136
+    model: MQ-136
+    role: supporting
+    targets: [NH4, H2S, CO]
+    clean_air_ratio: 3.6
+    note: >
+      Ammonia, which is what a floor cleaner or a degreaser leaves behind and
+      what makes a "clean" corridor smell the way it does.
+
+context_columns: [temperature, humidity]
+
+# Decay and settling time after wiping are the measurement, so the kinetic groups
+# are in; `health` is in because a surface verification that a dying sensor
+# passes is worse than no verification.
+feature_groups: [device_agnostic, temporal, health, decay, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. The
+    verdict layer's own timing analysis is the reason for `health` here: as
+    settling time is inversely proportional to the decay rate and dead noise
+    scales with baseline-to-threshold margin, a slow-dying element can make a
+    thoroughly cleaned surface read as clean. Channel health is part of the
+    answer, not a footnote to it.
+
+provisional:
+  - cadence_hz
+
+notes: >
+  No false-alarm budget is set, deliberately: cleaning verification is an
+  inspection with a person or a checklist behind it, not a paged monitor, so a
+  per-day alarm rate has no meaning.
+
+  This preset compares surfaces or occasions; it does not compute a percentage
+  clean. The array sees the volatile load in the headspace above a surface, which
+  is a different quantity from what remains on it: adsorption, temperature and
+  airflow all move the headspace load without the surface changing. A claim like
+  "98% cleaned" requires a surface assay, not a gas reading.
+
+  No detection rate or residual-threshold value is claimed here. A pass/fail
+  limit has to come from measured residue on the actual surfaces and the actual
+  cleaner, in the same protocol this cadence assumes.

@@ -1,0 +1,118 @@
+# mould_damp — moisture ingress and mould in buildings, cupboards and archives.
+#
+# Damp is a humidity question first and a volatile question second. The gas
+# channels locate the source; the humidity context reading decides whether it
+# matters. Both halves are needed, and neither alone is sufficient.
+
+id: mould_damp
+name: Mould and damp
+description: >
+  Detect moisture ingress and the volatile signature of mould in buildings,
+  cupboards, archives and stored paper. The array reports the sulfur- and
+  amine-bearing volatiles that mould and damp-associated microbial growth
+  produce; the humidity and temperature context readings carry the rest of the
+  evidence, because damp is a physical fact before it is a chemical one.
+
+sensor_type: mox
+
+# One sample per minute. Mould and damp develop over days to weeks, so the
+# cadence is chosen for a low duty cycle over a long deployment rather than for
+# event resolution. NEEDS EMPIRICAL VALIDATION: unlike food_freshness this
+# preset borrows no dataset cadence, and the per-minute figure is a judgement
+# about heater life and data volume, not a measured requirement.
+cadence_period_s: 60
+cadence_rationale: >
+  Damp and mould develop over days to weeks, so the useful question is the
+  level and its drift, not the shape of a transient. One sample per minute keeps
+  heater duty cycle and storage negligible over a multi-month deployment. The
+  figure is a judgement about duty cycle and data volume; no damp-specific
+  recording at this cadence exists in the workspace to check it against.
+
+sensors:
+  - id: mq136
+    model: MQ-136
+    role: primary
+    targets: [H2S, NH4, CO]
+    clean_air_ratio: 3.6
+    note: >
+      The workhorse of this preset: H2S is tabulated for this model alone among
+      the reference BOM, and sulfur volatiles are the strongest chemical
+      signature of anaerobic microbial growth in damp, enclosed material.
+
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [NH4, CO2, CO]
+    clean_air_ratio: 3.6
+    note: >
+      Ammonia, which is what a mould colony emits in quantity and what makes
+      damp material smell the way it does. CO2 adds the respiration term.
+
+  - id: mq8
+    model: MQ-8
+    role: supporting
+    targets: [H2, CH4, Alcohol]
+    clean_air_ratio: 70.0
+    note: >
+      Anaerobic and fermentative metabolism produce hydrogen and methane.
+      Weak evidence on their own, useful as a third opinion when the two primary
+      channels disagree.
+
+  - id: mq2
+    model: MQ-2
+    role: supporting
+    targets: [Alcohol, CO, LPG]
+    clean_air_ratio: 9.83
+    note: >
+      Broad reducing-gas corroboration, and a useful check against solvent
+      paint or cleaning products — the two most common confounders of a "damp"
+      reading in a maintained building.
+
+# Humidity is the primary variable of interest and is still only context: it is
+# preserved as metadata and never scored as a sensor channel, because a
+# humidity column fed to the feature extractor as a channel would corrupt every
+# per-channel statistic. Temperature accompanies it because surface temperature
+# tracks mould growth better than air temperature does.
+context_columns: [humidity, temperature]
+
+# Level and drift only. At 60 s the shortest resolvable event is 120 s, so the
+# temporal and decay groups are off by construction.
+feature_groups: [absolute, health, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. Note
+    that humidity is the dominant source of baseline movement for a MOX array,
+    so a damp site will drift more than a dry one for reasons that have nothing
+    to do with the sensor. That is an argument for reading humidity alongside
+    every drift verdict, not for loosening the threshold.
+
+false_alarm_budget:
+  # Judgement target, not a measured operating point. 0.07/day is ~1 per 2 weeks.
+  alarms_per_day: 0.07
+  rationale: >
+    A building owner will act on a damp report within days and ignore one that
+    arrives every morning. Roughly one report per fortnight per zone is enough
+    to catch a developing problem while leaving the report itself worth
+    reading. Buildings with a genuine maintenance response can tighten this.
+
+provisional:
+  - cadence_period_s
+  - false_alarm_budget.alarms_per_day
+
+notes: >
+  No mould-specific volatile marker is validated anywhere in this workspace.
+  The ammonia and sulfur channels are the strongest documented candidates for
+  damp-associated microbial growth and even that pairing is untested against a
+  labelled mould dataset; treat a divergence here as a prompt to go and look at
+  the wall, not as a detection. Species-level identification (Aspergillus,
+  Penicillium, Stachybotrys) is out of scope for any broad MOX array.

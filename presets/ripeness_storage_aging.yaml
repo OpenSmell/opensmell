@@ -1,0 +1,118 @@
+# ripeness_storage_aging — ripening and storage aging of fruit, vegetables and
+# other horticultural produce.
+#
+# Read the ethylene caveat below before using this preset. Ethylene is the
+# primary ripening marker and this array has no channel for it.
+
+id: ripeness_storage_aging
+name: Ripeness and storage aging
+description: >
+  Track ripening progress and storage aging in fruit and vegetables from the
+  volatile headspace: alcohols and hydrogen from fermentation, ketones and
+  aromatics from ripening, sulfur compounds from the point where aging turns
+  anaerobic. Suitable for trend monitoring across a storage cycle, not for
+  grading produce to a sale or non-sale standard.
+
+sensor_type: mox
+
+# One sample per minute. A ripening or storage-aging cycle is measured in days
+# to weeks, so the cadence is set by duty cycle, not by event resolution.
+# NEEDS EMPIRICAL VALIDATION — no recording of a horticultural cycle exists in
+# this workspace at this cadence.
+cadence_period_s: 60
+cadence_rationale: >
+  A ripening cycle is days to weeks long. One sample per minute keeps heater
+  duty cycle and storage negligible over a full cycle and gives a baseline of
+  30 samples at this cadence. The figure is chosen for duty cycle; no
+  horticultural recording in the workspace was acquired at this rate to check
+  it against.
+
+sensors:
+  - id: mq3
+    model: MQ-3
+    role: primary
+    targets: [Alcohol, Hexane, Benzene, CO]
+    clean_air_ratio: 60.0
+    note: >
+      Ethanol is the most reliable marker of fermentative ripening in climacteric
+      produce, and this is the most alcohol-selective channel available in the
+      constants table. Hexane and benzene responses cover the green-leaf and
+      aromatic side of maturation.
+
+  - id: mq8
+    model: MQ-8
+    role: primary
+    targets: [H2, CH4, Alcohol]
+    clean_air_ratio: 70.0
+    note: >
+      A second alcohol path plus hydrogen and methane, which appear when
+      ripening shifts toward anaerobic metabolism. Two independent alcohol
+      channels is deliberate: a single one drifting is the most likely single
+      fault in this array.
+
+  - id: mq135
+    model: MQ-135
+    role: primary
+    targets: [Acetone, CO2, Toluene, NH4]
+    clean_air_ratio: 3.6
+    note: >
+      Ketone response, which rises with ripening metabolism in several
+      commodities, and CO2 as the respiration term. Also the broadest channel,
+      which makes it the array's canary for a general baseline shift.
+
+  - id: mq136
+    model: MQ-136
+    role: supporting
+    targets: [H2S, NH4, CO]
+    clean_air_ratio: 3.6
+    note: >
+      Sulfur volatiles mark the point at which aging becomes anaerobic and
+      unacceptable rather than merely ripe. It is the channel that separates
+      "ripe, sell it" from "rotting, discard it".
+
+context_columns: [temperature, humidity]
+
+# Level and drift only: at 60 s the shortest resolvable event is 120 s.
+feature_groups: [absolute, health, selectivity, global]
+
+baseline:
+  duration_s: 1800
+  settling_s: 300
+  warmup_s: 172800
+  method: median-of-leading-window
+
+thresholds:
+  dead_noise_ceiling: 0.02
+  drift_abs_floor: 0.001
+  drift_rel_ceiling: 0.01
+  basis: >
+    SDK defaults (opensmell-rs VerdictThresholds::default), unchanged. Storage
+    rooms have wide temperature swings, and a MOX baseline moves with
+    temperature; the verdict layer's own guidance is that reversible
+    environmental drift stays correctable, which is the SDK default behaviour.
+    Read temperature alongside any drift verdict rather than re-anchoring on it
+    alone.
+
+false_alarm_budget:
+  # Judgement target, not a measured operating point. 0.14/day is ~1 per week.
+  alarms_per_day: 0.14
+  rationale: >
+    One report per storage bay per week is enough to catch a bay going wrong
+    while staying inside the number of reports a store manager will read.
+    Storage bays hold produce that is itself aging, so a report is only
+    actionable if it is rare; daily reports are indistinguishable from none.
+
+provisional:
+  - cadence_period_s
+  - false_alarm_budget.alarms_per_day
+
+notes: >
+  ETHYLENE GAP. Ethylene is the primary ripening hormone and the standard
+  marker for a ripening curve, and this workspace has no channel for it: the
+  offline constants table (opensmell/constants/sensors.json) has no ethylene
+  entry for any model, so no part number is named here. A specific
+  ethylene-selective part number must be verified against its datasheet before
+  this preset is used for any ethylene-driven claim; until then this array sees
+  ripening only indirectly, through alcohol and ketone response.
+  Grading to a commercial sale/non-sale standard is a different problem from
+  trend monitoring and is not supported by anything in this file.
