@@ -223,6 +223,13 @@ def compute_channel_health(series, r0_samples=15, r0=None, sr=10):
             ss_xy = float(((idx - x_mean) * (series - y_mean)).sum())
             drift_rate = (ss_xy / ss_xx) * float(sr)
     sensitivity_decay = 0.0
+    n_samples = len(series)
+    third = n_samples // 3
+    if third > 0 and r0 > 0.0:
+        first_mean = float(series[:third].mean())
+        last_mean = float(series[n_samples - third:].mean())
+        sensitivity_decay = (last_mean - first_mean) / r0
+
     noise_floor = float(np.std(series[:r0_samples]) / r0) if r0 > 0 else 0.0
 
     peak_idx = np.argmax(np.abs(series - r0))
