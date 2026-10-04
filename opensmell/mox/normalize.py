@@ -2,19 +2,25 @@
 
 Mirrors `osmograph-web/lib/osmell/normalize.ts` 1:1. R0 is the median of the
 explicit baseline channel when one is present (`baseline.source == "explicit"`);
-otherwise auto-R0 falls back to the median of the first `r0Samples` of the
-target channel (SmellNet-style session invariance without a dedicated baseline).
+otherwise auto-R0 falls back to the median of the first samples of the target
+channel (SmellNet-style session invariance without a dedicated baseline).
+
+The window is a declared `baseline.r0Samples` when the manifest carries one, and
+otherwise the cadence-independent contract default `r0_window_samples` -- a
+floored, capped 15% of the recording. See "The R0 window contract" in
+`electronic-nose/SAMPLING_CONTRACT.md`.
 """
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from ..normalize import mean, std
-from ..types import DEFAULT_R0_SAMPLES, ChannelStats, OsmellFile
+from ..types import DEFAULT_R0_SAMPLES, ChannelStats, OsmellFile, r0_window_samples
 
 
-def r0_from_samples(values: List[float], n: int = DEFAULT_R0_SAMPLES) -> float:
+def r0_from_samples(values: List[float], n: Optional[int] = DEFAULT_R0_SAMPLES) -> float:
+    n = r0_window_samples(len(values), n)
     window = values[:n]
     if not window:
         return float("nan")
@@ -35,11 +41,13 @@ def baseline_for_channel(
     """Return (r0, window_values, cv) for a channel.
 
     Matches the web `baselineForChannel`: with an explicit baseline the whole
-    baseline channel is used; otherwise the first `r0Samples` of the target.
+    baseline channel is used; otherwise the declared `r0Samples` window of the
+    target, or the cadence-independent contract default when none is declared.
     """
     baseline = file.manifest.baseline
     source = baseline.source if baseline else "none"
-    r0_samples = (baseline.r0_samples if baseline and baseline.r0_samples else DEFAULT_R0_SAMPLES)
+    declared = baseline.r0_samples if baseline and baseline.r0_samples else DEFAULT_R0_SAMPLES
+    r0_samples = r0_window_samples(len(target_values), declared)
 
     if source == "explicit":
         b = file.data.get(channel_id, [])

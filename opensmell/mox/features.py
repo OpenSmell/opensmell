@@ -2,6 +2,8 @@ import warnings
 import numpy as np
 from scipy import signal as sp_signal, optimize as sp_optimize
 
+from ..types import r0_window_samples
+
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="scipy.optimize")
 warnings.filterwarnings("ignore", message="Covariance of the parameters could not be estimated")
 
@@ -26,14 +28,22 @@ def _trapz(y, x=None):
 NOMINAL_CALIBRATION = (1.0, -0.5)
 
 
-def _r0_from_contract(series, r0_samples, r0=None):
+def _r0_from_contract(series, r0_samples=None, r0=None):
     """R0 from the binding contract (§10.2): explicit R0, else median of the
     first ``r0_samples`` finite samples; guard falls back to mean of positive
-    samples, then 1.0. Never returns NaN or a non-positive value."""
+    samples, then 1.0. Never returns NaN or a non-positive value.
+
+    ``r0_samples`` is the declared baseline window and is used verbatim. ``None``
+    (the default) means nothing was declared, so the window is
+    ``r0_window_samples(len(finite), None)`` — a floored, capped 15% of the
+    recording, which spans the same *seconds* at any cadence. See
+    `opensmell.types.r0_window_samples` and "The R0 window contract" in
+    `electronic-nose/SAMPLING_CONTRACT.md`.
+    """
     series = np.asarray(series, dtype=np.float64)
     finite = series[np.isfinite(series)]
     if r0 is None:
-        window = finite[:r0_samples] if r0_samples else finite
+        window = finite[:r0_window_samples(len(finite), r0_samples)]
         r0 = float(np.median(window)) if len(window) else 0.0
     if not np.isfinite(r0) or r0 <= 0:
         positive = finite[finite > 0]
@@ -53,8 +63,9 @@ def _tri_exp_decay(t, a1, tau1, a2, tau2, a3, tau3, c):
     return a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2) + a3 * np.exp(-t / tau3) + c
 
 
-def compute_channel_device_agnostic(series, r0_samples=15, sr=10, r0=None):
+def compute_channel_device_agnostic(series, r0_samples=None, sr=10, r0=None):
     series = np.asarray(series, dtype=np.float64)
+    r0_samples = r0_window_samples(len(series), r0_samples)
     if len(series) < r0_samples + 2:
         return {k: -1.0 for k in ["relative_amplitude", "direction", "rise_time",
                                    "decay_time", "auc", "endpoint_delta"]}
@@ -194,8 +205,12 @@ def compute_channel_temporal(series, sr=10):
     }
 
 
-def compute_channel_health(series, r0_samples=15, r0=None, sr=10):
+def compute_channel_health(series, r0_samples=None, r0=None, sr=10):
     series = np.asarray(series, dtype=np.float64)
+    # Resolve the window once, from the row count, so R0 and noise_floor below
+    # are measured over the same span. Left unresolved, one block could take the
+    # first 15 *finite* samples for R0 and the first 15 *rows* for noise_floor.
+    r0_samples = r0_window_samples(len(series), r0_samples)
     if len(series) < r0_samples + 5:
         return {"drift_rate": 0.0, "sensitivity_decay": 0.0,
                 "noise_floor": 0.0, "hysteresis": 0.0}
@@ -352,7 +367,7 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10, n_components=2, r0=Non
     return results
 
 
-def compute_saturation_index(series, r0_samples=15, r0=None):
+def compute_saturation_index(series, r0_samples=None, r0=None):
     """Compute how close the sensor response is to its estimated saturation capacity.
 
     Saturation index = observed response / estimated saturation response.
@@ -365,8 +380,12 @@ def compute_saturation_index(series, r0_samples=15, r0=None):
 
     Uses a simple empirical estimator: ratio of current response to the
     maximum ever observed response in the series, scaled by noise floor.
+
+    ``r0_samples`` is a declared baseline window, or ``None`` for the
+    cadence-independent contract default (`r0_window_samples`).
     """
     series = np.asarray(series, dtype=np.float64)
+    r0_samples = r0_window_samples(len(series), r0_samples)
     if len(series) < r0_samples + 5:
         return 0.0
 
@@ -406,11 +425,19 @@ def compute_channel_hardware(series):
     }
 
 
-def extract_all_framework_features(data, r0_samples=15, sr=10, r0_per_channel=None, calibration=None):
+def extract_all_framework_features(data, r0_samples=None, sr=10, r0_per_channel=None, calibration=None):
+    """The full 28-per-channel framework vector.
+
+    ``r0_samples`` is a declared baseline window shared by every per-channel
+    block, or ``None`` (the default) for the cadence-independent contract default
+    `r0_window_samples`. A declared window wins verbatim — see "The R0 window
+    contract" in `electronic-nose/SAMPLING_CONTRACT.md`.
+    """
     data = np.asarray(data, dtype=np.float64)
     if data.ndim == 1:
         data = data.reshape(-1, 1)
     n_ch = data.shape[1]
+    r0_samples = r0_window_samples(len(data), r0_samples)
 
     features = {}
 
@@ -629,7 +656,8 @@ def _decay_time_ms_after(norm, time, peak_idx):
     return None
 
 
-def _saturation_index_for(norm, r0_samples):
+def _saturation_index_for(norm, r0_samples=None):
+    r0_samples = r0_window_samples(len(norm), r0_samples)
     if len(norm) < r0_samples + 5:
         return 0.0
     r0_norm = norm[:r0_samples]

@@ -36,13 +36,64 @@ BASELINE_SOURCES = ("explicit", "auto", "none")
 
 # Quality constants (shared with web lib/osmell/types.ts).
 DEFAULT_ADC_MAX = 4095
-DEFAULT_R0_SAMPLES = 15
 DEAD_CV_THRESHOLD = 0.001
 NOISE_CV_LIMIT = 0.05
 SNR_TARGET = 10
 FULL_SCORE_DURATION_S = 60
 MIN_SPAN_FRACTION = 0.1
 GAP_TOLERANCE = 0.1
+
+# --- R0 baseline window (SAMPLING_CONTRACT.md, "The R0 window contract") ---
+#
+# A declared window (`BaselineDescriptor.r0_samples`, a preset's
+# `baseline.r0_samples`, or an explicit `r0_samples` argument) always wins and is
+# used verbatim: whoever declares a window owns the duration-to-count conversion
+# the contract requires (`round(duration_s * sr)`, see
+# `opensmell.presets.BaselineSpec.resolve_r0_samples`).
+#
+# `None` (or `0`) here means "no window declared", not "zero samples": reduce the
+# window with the contract default below. Rust carries the same meaning in
+# `R0_WINDOW_DEFAULT = 0` (it has no `Option<usize>` sentinel to spare), and JS in
+# `DEFAULT_R0_SAMPLES = undefined`, so all three SDKs accept
+# `None`/`undefined`/`0` interchangeably and none of them treats a non-positive
+# window as meaningful.
+DEFAULT_R0_SAMPLES: Optional[int] = None
+# Fraction of the recording the baseline window spans when nothing is declared.
+# The same fraction `HARDWARE.md` (`cutoff = sample_count * 0.15`) and
+# `data-commons/docs/wire-protocol.md` ("median of first 15%") specify.
+R0_WINDOW_FRACTION = 0.15
+# Floor: below ~5 samples the median is one or two readings and a single ADC LSB
+# moves R0 by 10-20%. Ceiling: on a long recording an unbounded 15% would swallow
+# the onset, so the baseline must stay inside the leading plateau.
+R0_WINDOW_MIN_SAMPLES = 5
+R0_WINDOW_MAX_SAMPLES = 30
+
+
+def r0_window_samples(n_samples: int, declared: Optional[int] = None) -> int:
+    """Number of leading samples forming the R0 baseline window.
+
+    ``declared`` is a caller/manifest-declared window and is returned verbatim.
+    ``None`` (and ``0``, which is not a meaningful window) means nothing was
+    declared and the contract default applies:
+    ``clamp(floor(0.15 * n_samples), 5, 30)``.
+
+    **The default window is cadence-independent**; a fixed sample count is not.
+    ``n_samples`` grows with the rate, so in the fraction region ``0.15 *
+    n_samples`` spans ``0.15 * T`` seconds of recording whether it was sampled at
+    1, 2, 10 or 100 Hz. The superseded fixed 15-sample default spanned 1.5 s at
+    10 Hz and 15 s at 1 Hz, a 100x rescale across cadence. The clamps are the
+    documented exception and are themselves sample counts, so they are
+    cadence-*dependent*: the floor binds below 34 samples and the ceiling above
+    200, and because those bounds are in samples the duration band they map to
+    differs per cadence. Invariance is exact only for
+    ``34 <= n_samples <= 200``; outside it, declare the window (rule 5).
+    """
+    if declared is None or declared <= 0:
+        if n_samples <= 0:
+            return R0_WINDOW_MIN_SAMPLES
+        fraction = int(n_samples * R0_WINDOW_FRACTION)
+        return min(R0_WINDOW_MAX_SAMPLES, max(R0_WINDOW_MIN_SAMPLES, fraction))
+    return int(declared)
 
 # Dynamic range is measured as a robust 5th-95th percentile span, minus this
 # multiple of the channel's own noise standard deviation. Without the
