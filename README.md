@@ -254,6 +254,44 @@ such as a per-minute cadence whose 120 s resolution floor makes the kinetic feat
 groups meaningless. Presets are searched in `$OPENSMELL_PRESETS_DIR`, the source tree,
 the package, then `<prefix>/share/opensmell/presets`.
 
+## MCP server (for AI agents)
+
+`opensmell-mcp` exposes a read-only slice of the SDK over the
+[Model Context Protocol](https://modelcontextprotocol.io) so an agent working in a
+terminal can inspect presets and recordings without re-deriving the format. It is
+strictly local: no network, no telemetry, no writes, no hardware. Six tools are
+exposed — `list_presets`, `get_preset`, `validate_recording`, `analyze_recording`,
+`compute_health_features`, `capabilities` — and failures come back as actionable
+strings, never tracebacks. The four-way anomaly verdict
+(Normal / GradualDrift / Poisoning / Dead) lives in the Rust SDK and is deliberately
+*not* reimplemented here; `compute_health_features` returns the health features it
+consumes and says so.
+
+```bash
+pip install "opensmell[mcp]"
+```
+
+Register it with Claude Code:
+
+```console
+$ claude mcp add opensmell -- opensmell-mcp
+```
+
+Or drop this into any MCP client's config:
+
+```json
+{
+  "mcpServers": {
+    "opensmell": {
+      "command": "opensmell-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Ask an agent `capabilities()` first when unsure what is in scope.
+
 ## CSV convenience functions
 
 The thin CSV short-hands wrap the same extractor as the `.osmell` path (they are not a
@@ -277,6 +315,7 @@ separate implementation), for quick one-liners:
 
 - Python 3.10+
 - numpy, pandas, scikit-learn, scipy
+- optional: `mcp` — the `opensmell-mcp` server (`pip install "opensmell[mcp]"`)
 
 ## Related
 

@@ -35,6 +35,12 @@ Repository = "https://github.com/OpenSmell/opensmell"
 
 [project.scripts]
 opensmell-presets = "opensmell.presets_cli:main"
+opensmell-mcp = "opensmell.mcp_server:main"
+
+# The MCP server is optional: the SDK works without it. Install with
+# `pip install "opensmell[mcp]"` to get the `opensmell-mcp` stdio server.
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
 
 [build-system]
 requires = ["setuptools>=64"]
