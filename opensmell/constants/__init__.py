@@ -18,17 +18,27 @@ available power-law mapping to a target gas concentration for them, so the
 SDK deliberately refuses to fabricate one. They are usable as relative
 response/VOC-index channels, but ``power_law``/``clean_air_ratio``/etc. raise
 ``UnknownSensorError`` for them. Use ``is_power_law_sensor`` to distinguish.
+
+Sensor and gas lookup is deliberately tolerant of the spellings people copy
+from datasheets and READMEs: ``MQ-135``, ``MQ135``, ``mq_135`` and ``MQ 135``
+all resolve to the same entry, and gas names are matched case-insensitively.
+Common synonyms are only mapped when the table labels the same measurement
+(for example ``C2H5OH`` -> ``Alcohol``); no gas is invented for a sensor that
+does not tabulate it.
 """
 
 from __future__ import annotations
 
+import difflib
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
 _SENSORS_PATH = Path(__file__).with_name("sensors.json")
 
 _load = None
+_sensor_index = None
 
 
 def _load_sensors() -> dict:
@@ -39,8 +49,69 @@ def _load_sensors() -> dict:
     return _load
 
 
+def _key(name: object) -> str:
+    """Case/punctuation-insensitive lookup key for a sensor or gas name."""
+    return re.sub(r"[^A-Z0-9]", "", str(name).upper())
+
+
+def _sensor_lookup() -> Dict[str, str]:
+    global _sensor_index
+    if _sensor_index is None:
+        _sensor_index = {
+            _key(name): name for name in _load_sensors()["sensors"]
+        }
+    return _sensor_index
+
+
 class UnknownSensorError(KeyError):
     """The requested sensor model is not in the offline constants table."""
+
+    def __init__(self, sensor: object, reason: Optional[str] = None):
+        self.sensor = str(sensor)
+        self.reason = reason
+        if reason:
+            message = f"Sensor {self.sensor!r} {reason}."
+        else:
+            known = sensor_models()
+            message = (
+                f"Unknown sensor {self.sensor!r}. "
+                f"Known sensors: {', '.join(known)}."
+            )
+            matches = difflib.get_close_matches(self.sensor, known, n=3)
+            if matches:
+                message += (
+                    " Did you mean "
+                    + ", ".join(repr(m) for m in matches)
+                    + "?"
+                )
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        return self.args[0]
+
+
+class UnknownGasError(KeyError):
+    """The sensor exists but has no tabulated response for this gas."""
+
+    def __init__(self, sensor: str, gas: object, known: List[str]):
+        self.sensor = sensor
+        self.gas = str(gas)
+        self.known_gases = list(known)
+        message = (
+            f"Sensor {sensor!r} has no tabulated response for gas {self.gas!r}. "
+            f"Known gases: {', '.join(self.known_gases)}."
+        )
+        matches = difflib.get_close_matches(self.gas, self.known_gases, n=3)
+        if matches:
+            message += (
+                " Did you mean "
+                + ", ".join(repr(m) for m in matches)
+                + "?"
+            )
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        return self.args[0]
 
 
 def sensor_models() -> List[str]:
@@ -48,19 +119,82 @@ def sensor_models() -> List[str]:
     return sorted(_load_sensors()["sensors"].keys())
 
 
-def _gases_for(sensor: str) -> Dict[str, Dict[str, float]]:
-    """Gas-to-constants map for ``sensor`` ([] if none tabulated).
+def list_sensors() -> List[str]:
+    """Public alias for :func:`sensor_models` (``opensmell.list_sensors()``)."""
+    return sensor_models()
 
-    A ``KeyError`` here means either the sensor is unknown, or it is a known
-    non-power-law channel (e.g. relative-response MEMS like ``TGS8100`` /
-    ``SGP30`` / ``SGP40`` / ``BME680``) that has no ``gases`` table. Both cases
-    surface as ``UnknownSensorError`` so callers never see a raw ``KeyError``.
+
+def normalize_sensor_name(sensor: object) -> str:
+    """Resolve a user spelling to the canonical constants-table model name.
+
+    ``MQ-135``, ``MQ135``, ``mq_135`` and ``MQ 135`` all resolve to ``MQ-135``.
+    Raises :class:`UnknownSensorError` with the valid options when no model
+    matches.
     """
-    try:
-        gases = _load_sensors()["sensors"][sensor]["gases"]
-    except KeyError:
-        raise UnknownSensorError(sensor) from None
+    canonical = _sensor_lookup().get(_key(sensor))
+    if canonical is None:
+        raise UnknownSensorError(sensor)
+    return canonical
+
+
+def _gases_for(sensor: str) -> Dict[str, Dict[str, float]]:
+    """Gas-to-constants map for ``sensor``.
+
+    A known non-power-law channel (e.g. relative-response MEMS like
+    ``TGS8100`` / ``SGP30`` / ``SGP40`` / ``BME680``) has no ``gases`` table.
+    That is reported as :class:`UnknownSensorError` with an explicit reason so
+    callers never see a raw ``KeyError`` or mistake it for a typo.
+    """
+    canonical = normalize_sensor_name(sensor)
+    entry = _load_sensors()["sensors"][canonical]
+    gases = entry.get("gases")
+    if not gases:
+        raise UnknownSensorError(
+            canonical,
+            reason=(
+                "is a relative-response channel with no tabulated "
+                "power-law gases"
+            ),
+        )
     return gases
+
+
+# Synonyms that name the same measurement as a tabulated gas. These are
+# intentionally narrow: a missing gas must stay missing rather than be
+# silently mapped onto a chemically different curve.
+_GAS_ALIASES = {
+    "C2H5OH": "Alcohol",
+    "ETHANOL": "Alcohol",
+    "ETHYLALCOHOL": "Alcohol",
+}
+
+
+def normalize_gas_name(sensor: str, gas: object) -> str:
+    """Resolve a gas spelling to the canonical name for ``sensor``.
+
+    Matching is case- and punctuation-insensitive, with a small set of
+    documented synonyms. Raises :class:`UnknownGasError` listing the sensor's
+    tabulated gases when no match exists.
+    """
+    canonical_sensor = normalize_sensor_name(sensor)
+    gases = _gases_for(canonical_sensor)
+    raw = str(gas)
+
+    if raw in gases:
+        return raw
+
+    key = _key(raw)
+    for canonical in gases:
+        if _key(canonical) == key:
+            return canonical
+
+    alias = _GAS_ALIASES.get(key)
+    if alias is not None:
+        for canonical in gases:
+            if _key(canonical) == _key(alias):
+                return canonical
+
+    raise UnknownGasError(canonical_sensor, raw, sorted(gases))
 
 
 def sensor_gases(sensor: str) -> List[str]:
@@ -70,26 +204,27 @@ def sensor_gases(sensor: str) -> List[str]:
 
 def clean_air_ratio(sensor: str) -> float:
     """Clean-air resistance ratio ``Rs/R0`` reported for the sensor model."""
+    canonical = normalize_sensor_name(sensor)
+    entry = _load_sensors()["sensors"][canonical]
     try:
-        return float(_load_sensors()["sensors"][sensor]["clean_air_ratio"])
+        return float(entry["clean_air_ratio"])
     except KeyError:
-        raise UnknownSensorError(sensor) from None
+        raise UnknownSensorError(
+            canonical, reason="has no tabulated clean-air ratio"
+        ) from None
 
 
 def power_law(sensor: str, gas: str) -> Dict[str, float]:
     """Return ``{"a": a, "b": b}`` for ``sensor`` responding to ``gas``.
 
-    Raises ``UnknownSensorError`` for an unknown sensor (or a known
-    non-power-law channel with no ``gases`` table) and ``KeyError`` for a gas
-    the sensor has no tabulated response for.
+    Raises :class:`UnknownSensorError` for an unknown sensor (or a known
+    non-power-law channel with no ``gases`` table) and :class:`UnknownGasError`
+    for a gas the sensor has no tabulated response for. Both subclasses of
+    ``KeyError`` carry the valid options in their message.
     """
-    gases = _gases_for(sensor)
-    try:
-        return dict(gases[gas])
-    except KeyError:
-        raise KeyError(
-            f"'{sensor}' has no tabulated response for gas '{gas}'. "
-            f"Known gases: {sorted(gases)}") from None
+    canonical_sensor = normalize_sensor_name(sensor)
+    canonical_gas = normalize_gas_name(canonical_sensor, gas)
+    return dict(_gases_for(canonical_sensor)[canonical_gas])
 
 
 def all_power_laws(sensor: str) -> Dict[str, Dict[str, float]]:
@@ -106,9 +241,10 @@ def is_power_law_sensor(sensor: str) -> bool:
     return False -- they cannot be quantified from offline constants.
     """
     try:
-        return "gases" in _load_sensors()["sensors"][sensor]
-    except KeyError:
+        canonical = normalize_sensor_name(sensor)
+    except UnknownSensorError:
         return False
+    return bool(_load_sensors()["sensors"][canonical].get("gases"))
 
 
 def sensor_sources(sensor: str) -> List[str]:
@@ -119,15 +255,17 @@ def sensor_sources(sensor: str) -> List[str]:
     authoritative power-law exists). Raises ``UnknownSensorError`` if the
     sensor is not in the table.
     """
-    try:
-        return list(_load_sensors()["sensors"][sensor].get("sources", []))
-    except KeyError:
-        raise UnknownSensorError(sensor) from None
+    canonical = normalize_sensor_name(sensor)
+    return list(_load_sensors()["sensors"][canonical].get("sources", []))
 
 
 __all__ = [
     "UnknownSensorError",
+    "UnknownGasError",
     "sensor_models",
+    "list_sensors",
+    "normalize_sensor_name",
+    "normalize_gas_name",
     "sensor_gases",
     "clean_air_ratio",
     "power_law",

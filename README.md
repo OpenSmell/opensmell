@@ -49,13 +49,45 @@ The MOX feature framework is defined **sensor-count-agnostically**. For any chan
 `c` the vector has `28·c + c(c−1)/2 + 4` features — 28 per channel, one selectivity ratio
 per channel pair, and 4 global metrics. At the canonical six-channel rig that is 187.
 
+Channel-count agnostic is not the same as modality agnostic. The implemented feature and
+quality backends are MOX/chemiresistive. Use `inspect_source()` to see what the loader
+detected before choosing a path:
+
 ```python
 import opensmell
 
+profile = opensmell.inspect_source("mox_6ch.csv")
+profile.sensor_type          # "mox" for MQ/SGP/TGS/BME model headers, else "unknown"
+profile.feature_family       # "mox", "mox-compatible", or "unsupported"
+profile.models               # recognized channel -> canonical model, e.g. {"MQ135": "MQ-135"}
+profile.warnings             # interpretation decisions, including inferred sensor type
+```
+
+Unknown numeric arrays are treated as `"mox-compatible"` and can use the signal-level
+framework. Declared MIRIS or electrochemical recordings are reported as `"unsupported"`;
+`extract_features()` and `process()` raise `UnsupportedSensorTypeError` instead of silently
+applying MOX math. Their backends are still explicit stubs.
+
+```python
 # Canonical 6-channel rig -> 187 features
 features, names = opensmell.extract_features("cinnamon.csv")
 # features: (N_windows, 187);  names: list of 187 names
 avg = features.mean(axis=0)
+
+# Any CSV channel names work: S1..S6 are detected automatically
+features, names = opensmell.extract_features("mox_6ch.csv")
+
+# Select or rename channels explicitly when the header is ambiguous
+features, names = opensmell.extract_features(
+    "mox_6ch.csv",
+    channels={"S1": "NO2", "S2": "C2H5OH", "S3": "VOC",
+              "S4": "CO", "S5": "Alcohol", "S6": "LPG"},
+)
+
+# The same call accepts the ingest result or a parsed .osmell file
+session = opensmell.ingest_file("mox_6ch.csv")
+features, names = opensmell.extract_features(session)
+features, names = opensmell.extract_features("recording.osmell")
 
 # No hardwired six: names follow the same formula for any channel count
 from opensmell.mox import features as _f
@@ -156,17 +188,22 @@ precise path, and falsifies the fit by leave-one-concentration-out cross-validat
 ```python
 import opensmell
 
-quick = opensmell.calibrate_quick("MQ135", "c2h5oh", reference_ppm=100)
+print(opensmell.list_sensors())                 # valid model ids
+print(opensmell.sensor_gases("MQ-135"))         # valid gases: CO, Alcohol, ...
+
+# Sensor ids are case/punctuation-insensitive; use a gas the model tabulates.
+quick = opensmell.calibrate_quick("MQ-135", "Alcohol", reference_ppm=100)
 
 rr, c = [1.5, 2.1, 3.0], [10, 50, 100]
-precise = opensmell.calibrate_precise("MQ135", "co", rr, c)
+precise = opensmell.calibrate_precise("MQ-135", "CO", rr, c)
 print(precise["calibration"])          # {"a": ..., "b": ...}
 print(precise["loocv"]["mean_abs_pct_error"])  # honest falsification
 ```
 
 A calibration is a power-law point estimate, not an absolute truth: verified cross-device
 affine calibration degrades (47% → 33%), so the SDK never presents calibrated ppm as a
-physical absolute.
+physical absolute. Unknown sensor or gas names raise an error that lists the valid
+options (and offers close matches), so a typo does not turn into a silent default.
 
 ## Hardware-sufficiency gate
 
@@ -292,16 +329,18 @@ Or drop this into any MCP client's config:
 
 Ask an agent `capabilities()` first when unsure what is in scope.
 
-## CSV convenience functions
+## Recording convenience functions
 
-The thin CSV short-hands wrap the same extractor as the `.osmell` path (they are not a
-separate implementation), for quick one-liners:
+The thin recording short-hands wrap the same extractor as the `.osmell` path (they are not
+a separate implementation), for quick one-liners. Each accepts a CSV/.osmell path, an
+`OsmellFile`, or the `IngestedSession` returned by `ingest_file`:
 
-- `load_recording(path)` → Rs/R₀-normalized array
-- `extract_features(path)` → `(N_windows, 28c+…)` array and names
-- `process(path, model=None)` → `SmellResult` (extract, optionally predict)
+- `inspect_source(path, channels=None)` → `SensorProfile` (family, models, feature path, warnings)
+- `load_recording(path, channels=None)` → Rs/R₀-normalized array
+- `extract_features(path, channels=None)` → `(N_windows, 28c+…)` array and names (MOX/chemiresistive only)
+- `process(path, model=None, channels=None)` → `SmellResult` (extract, optionally predict)
 - `train(X, y)` → StandardScaler + RandomForest pipeline (attaches the dimensional floor)
-- `predict(path, model)` → `process` with a model
+- `predict(path, model, channels=None)` → `process` with a model
 - `feature_names(n_channels=None)` → ordered names for any channel count
 
 ## Data model types

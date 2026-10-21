@@ -1,9 +1,11 @@
 """opensmell — digital olfaction SDK.
 
-v3 modular framework: sensor-agnostic interfaces at the top level
-(`io`, `csv`, `normalize`, `quality`, `features`) with sensor-specific
-implementations in `opensmell.mox` (and future `opensmell.miris`,
-`opensmell.electrochemical`). The MOX thermodynamic feasibility chain lives at
+v3 modular framework: modality-dispatched interfaces at the top level
+(`io`, `csv`, `normalize`, `quality`, `features`, `profile`) with
+sensor-specific implementations in `opensmell.mox`. The MOX feature and quality
+paths are implemented; `opensmell.miris` and `opensmell.electrochemical` are
+explicit stubs, and `inspect_source()` reports them as unsupported rather than
+silently applying MOX math. The MOX thermodynamic feasibility chain lives at
 `opensmell.mox.smellability`.
 
 Legacy v2 CSV-based API (`process`, `train`, `predict`, `extract_features`,
@@ -15,6 +17,8 @@ without importing the internals.
 """
 
 import numpy as np
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
@@ -39,6 +43,12 @@ from .hardware import (
     implied_channels,
     min_effective_dimensions,
 )
+from .constants import (
+    UnknownGasError,
+    UnknownSensorError,
+    list_sensors,
+    sensor_gases,
+)
 from .mox.preprocessing import load_csv, rs_r0_normalize, segment
 from .result import SmellResult
 
@@ -52,7 +62,7 @@ import sys as _sys
 _sys.modules[__name__ + ".smellability"] = smellability
 del _sys
 
-# --- New v3 sensor-agnostic API ---
+# --- New v3 modality-aware API ---
 from .csv import guess_sensor_type, parse_csv
 from .features import process_mox, run_processor
 from .ingest import (
@@ -69,6 +79,11 @@ from .io import (
     parse_osmell,
     parse_osmell_file,
     write_osmell,
+)
+from .profile import (
+    SensorProfile,
+    UnsupportedSensorTypeError,
+    inspect_source,
 )
 from .quality import compute_quality
 from .presets import (
@@ -119,13 +134,122 @@ def _features_from_normed(normed: np.ndarray, n_channels: int = None) -> tuple:
     return arr, fnames
 
 
-def load_recording(filepath: str) -> np.ndarray:
-    raw = load_csv(filepath)
+def _array_from_osmell(file: OsmellFile, channels=None) -> np.ndarray:
+    """Select channels from an OsmellFile in requested (or manifest) order."""
+    available = [c.id for c in file.manifest.sensor.channels]
+    if not available:
+        raise ValueError("The .osmell manifest declares no sensor channels.")
+
+    if channels is None:
+        selected = available
+    elif isinstance(channels, Mapping):
+        missing = [c for c in channels if c not in available]
+        if missing:
+            raise ValueError(
+                f"channels mapping refers to channels not in the .osmell: "
+                f"{missing}. Available channels: {available}."
+            )
+        selected = list(channels.keys())
+    elif isinstance(channels, Sequence) and not isinstance(channels, (str, bytes)):
+        selected = list(channels)
+    elif isinstance(channels, (str, bytes)):
+        selected = [channels]
+    else:
+        raise TypeError(
+            "channels must be a sequence of channel ids or a "
+            "{source: output} mapping."
+        )
+
+    missing = [c for c in selected if c not in available]
+    if missing:
+        raise ValueError(
+            f"Requested channel(s) not in the .osmell: {missing}. "
+            f"Available channels: {available}."
+        )
+    if not selected:
+        raise ValueError("No channels selected.")
+
+    n = len(file.time)
+    columns = []
+    for cid in selected:
+        values = file.data.get(cid)
+        if values is None:
+            raise ValueError(f"Channel {cid!r} has no data in the .osmell.")
+        arr = np.asarray(values, dtype=np.float64)
+        if arr.shape[0] < n:
+            arr = np.pad(arr, (0, n - arr.shape[0]), constant_values=np.nan)
+        columns.append(arr[:n])
+    return np.column_stack(columns)
+
+
+def _array_from_source(source, channels=None) -> np.ndarray:
+    """Raw (un-normalized) sensor array from a path, OsmellFile or ingest result."""
+    if isinstance(source, OsmellFile):
+        return _array_from_osmell(source, channels)
+    if isinstance(source, IngestedSession):
+        if not source.ok or source.file is None:
+            detail = source.error or "; ".join(source.warnings) or "unknown error"
+            raise ValueError(f"Ingest failed for {source.source}: {detail}")
+        return _array_from_osmell(source.file, channels)
+    if isinstance(source, (str, Path)):
+        path = Path(source)
+        if path.suffix.lower() == ".osmell":
+            return _array_from_osmell(parse_osmell_file(path), channels)
+        return load_csv(path, channels=channels)
+    raise TypeError(
+        "source must be a CSV/.osmell path, an OsmellFile, or an "
+        f"IngestedSession; got {type(source).__name__}."
+    )
+
+
+def _require_mox_features(source, channels=None) -> SensorProfile:
+    """Refuse to apply the MOX feature framework to an unsupported family."""
+    profile = inspect_source(source, channels=channels)
+    if not profile.supported:
+        raise UnsupportedSensorTypeError(
+            f"{profile.source}: sensor type {profile.sensor_type!r} has no "
+            "feature backend. The implemented framework covers MOX/chemiresistive "
+            "arrays (known models or MOX-compatible numeric channels). "
+            "Use opensmell.run_processor() for raw normalized data, or "
+            "opensmell.inspect_source() to inspect the detected profile."
+        )
+    return profile
+
+
+def load_recording(source, channels=None) -> np.ndarray:
+    """Load and Rs/R0-normalize a recording.
+
+    ``source`` may be a CSV or ``.osmell`` path, an ``OsmellFile``, or an
+    ``IngestedSession`` returned by :func:`ingest_file`. Channel selection is
+    explicit when needed:
+
+    - omit ``channels`` to use every detected sensor channel;
+    - pass a sequence such as ``["S1", "S2", "S3"]``;
+    - pass a mapping such as ``{"S1": "ch0", "S2": "ch1"}``.
+
+    This is the shared loader behind ``extract_features``, ``process`` and
+    ``predict``, so custom channel names no longer have to be renamed to the
+    six historical MOX columns.
+    """
+    raw = _array_from_source(source, channels=channels)
     return rs_r0_normalize(raw)
 
 
-def extract_features(filepath: str) -> tuple:
-    normed = load_recording(filepath)
+def extract_features(source, channels=None) -> tuple:
+    """Extract the MOX framework feature matrix from a recording.
+
+    ``source`` accepts a CSV/.osmell path, an ``OsmellFile``, or the
+    ``IngestedSession`` returned by ``ingest_file``. ``channels`` selects
+    arbitrary CSV columns (sequence) or renames them (mapping). The feature
+    count follows the loaded channel count: ``28c + c(c-1)/2 + 4``.
+
+    The implemented framework is MOX/chemiresistive. Unknown numeric arrays are
+    treated as MOX-compatible, but declared MIRIS/electrochemical recordings
+    raise :class:`UnsupportedSensorTypeError` instead of silently inheriting MOX
+    feature math. Use :func:`inspect_source` to see the detected family.
+    """
+    _require_mox_features(source, channels=channels)
+    normed = load_recording(source, channels=channels)
     return _features_from_normed(normed, n_channels=normed.shape[1])
 
 
@@ -138,8 +262,9 @@ def feature_names(n_channels=None) -> list:
     return _features.feature_names(n_channels=n_channels)
 
 
-def process(filepath: str, model: Pipeline = None) -> SmellResult:
-    normed = load_recording(filepath)
+def process(source, model: Pipeline = None, channels=None) -> SmellResult:
+    _require_mox_features(source, channels=channels)
+    normed = load_recording(source, channels=channels)
     if model is not None:
         check_rig_sufficiency(normed.shape[1], model)
     features_arr, fnames = _features_from_normed(normed)
@@ -186,8 +311,8 @@ def train(X: np.ndarray, y: np.ndarray, n_estimators: int = 200) -> Pipeline:
     return model
 
 
-def predict(filepath: str, model: Pipeline) -> SmellResult:
-    return process(filepath, model=model)
+def predict(source, model: Pipeline, channels=None) -> SmellResult:
+    return process(source, model=model, channels=channels)
 
 
 # Backwards-compat alias for the .osmell loader.
@@ -212,15 +337,23 @@ __all__ = [
     "normed_to_rr",
     "calibrate_quick",
     "calibrate_precise",
+    # Sensor constants / discoverability
+    "UnknownSensorError",
+    "UnknownGasError",
+    "list_sensors",
+    "sensor_gases",
     # Hardware sufficiency gate (§10.10 N→M limit)
     "HardwareInsufficiencyWarning",
     "check_rig_sufficiency",
     "effective_dims",
     "min_effective_dimensions",
     "implied_channels",
-    # v3 sensor-agnostic API
+    # v3 modality-aware API
     "parse_csv",
     "guess_sensor_type",
+    "SensorProfile",
+    "UnsupportedSensorTypeError",
+    "inspect_source",
     "ingest_file",
     "ingest_folder",
     "build_osmell_file",

@@ -1,7 +1,7 @@
 [project]
 name = "opensmell"
-version = "1.0.0"
-description = "OpenSmell SDK — modular digital-olfaction framework: .osmell I/O, quality scoring, and sensor-specific feature extraction (MOX, MIRIS, electrochemical)"
+version = "1.0.1"
+description = "OpenSmell SDK — modular digital-olfaction framework: .osmell I/O, quality scoring, and MOX/chemiresistive feature extraction (MIRIS and electrochemical are explicit stubs)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [

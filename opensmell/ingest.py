@@ -6,9 +6,11 @@ Handles the two de-facto structures people actually keep:
 
 Every file is adopted (never rejected on structure): columns are classified,
 missing time becomes explicit synthetic timing, context columns (environmental
-readings) are preserved as metadata, and each session carries a quality report
-plus the parse warnings so a review UI can show exactly how the data was
-interpreted and what to improve.
+readings) are preserved as metadata, and each session carries the parse warnings
+so a review UI can show exactly how the data was interpreted and what to improve.
+A quality report is attached when a scorer exists for the detected family; an
+unsupported family is still adopted, with the missing backend recorded as a
+warning instead of discarding the recording.
 """
 
 from __future__ import annotations
@@ -148,17 +150,24 @@ def ingest_file(path, substance: Optional[str] = None, role: str = "single") -> 
             session.error = "No numeric sensor columns found."
             return session
         file = build_osmell_file(parsed, label=label, substance=substance, source=str(p), role=role)
-        report = compute_quality(
-            file,
-            sample_count=parsed.row_count,
-            guess_sampling_rate_hz=parsed.guess_sampling_rate_hz,
-            unsorted=parsed.unsorted,
-            non_finite=parsed.non_finite,
-        )
+        warnings = list(parsed.warnings)
+        try:
+            report = compute_quality(
+                file,
+                sample_count=parsed.row_count,
+                guess_sampling_rate_hz=parsed.guess_sampling_rate_hz,
+                unsorted=parsed.unsorted,
+                non_finite=parsed.non_finite,
+            )
+        except NotImplementedError as exc:
+            # Adopt the recording even when no scorer exists for its family;
+            # the missing backend is a warning, not a reason to discard data.
+            report = None
+            warnings.append(str(exc))
         session.ok = True
         session.file = file
         session.report = report
-        session.warnings = parsed.warnings
+        session.warnings = warnings
     except Exception as e:  # adopt-don't-reject: any failure is reported, not fatal
         session.error = str(e)
     return session

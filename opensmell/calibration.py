@@ -34,7 +34,11 @@ from typing import Dict, Optional
 
 import numpy as np
 
-from .constants import UnknownSensorError, power_law
+from .constants import (
+    normalize_gas_name,
+    normalize_sensor_name,
+    power_law,
+)
 
 
 class CalibrationError(ValueError):
@@ -244,27 +248,31 @@ def calibrate_quick(sensor: str, gas: str, channel: str = "ch0",
     measured reference points: the constants are single-reference-substance
     datasheet estimates that do not transfer across rigs (§4.6).
 
+    Sensor names are matched case- and punctuation-insensitively (``MQ135``,
+    ``mq-135`` and ``MQ-135`` are the same model), and gas names are matched
+    case-insensitively. Use ``opensmell.list_sensors()`` and
+    ``opensmell.sensor_gases(model)`` to discover the valid names.
+
     ``override`` may supply ``{"a": ..., "b": ...}`` to adjust the tabulated
     values for a specific rig. Returns a one-channel ``sensor.calibration``
     payload conforming to ``CalibrationDescriptor.from_dict``.
     """
     if override is None:
         override = {}
-    try:
-        params = dict(power_law(sensor, gas))
-    except UnknownSensorError:
-        raise
+    sensor_name = normalize_sensor_name(sensor)
+    gas_name = normalize_gas_name(sensor_name, gas)
+    params = dict(power_law(sensor_name, gas_name))
     params.update(override)
     b = float(params["b"])
     a = float(params["a"])
     if a <= 0 or b == 0:
         raise CalibrationError(
             f"`calibrate_quick` requires a > 0 and b != 0 for a usable power law; "
-            f"got (a={a}, b={b}) sensor={sensor} gas={gas}.")
+            f"got (a={a}, b={b}) sensor={sensor_name} gas={gas_name}.")
     payload = {
         "a": a,
         "b": b,
-        "referenceSubstance": gas,
+        "referenceSubstance": gas_name,
         "date": date.today().isoformat(),
         "method": "datasheet",
     }

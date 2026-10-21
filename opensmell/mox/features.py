@@ -52,15 +52,78 @@ def _r0_from_contract(series, r0_samples=None, r0=None):
 
 
 def _exp_decay(t, a, tau, c):
-    return a * np.exp(-t / tau) + c
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        return a * np.exp(-t / tau) + c
 
 
 def _bi_exp_decay(t, a1, tau1, a2, tau2, c):
-    return a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2) + c
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        return a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2) + c
 
 
 def _tri_exp_decay(t, a1, tau1, a2, tau2, a3, tau3, c):
-    return a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2) + a3 * np.exp(-t / tau3) + c
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        return (a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2)
+                + a3 * np.exp(-t / tau3) + c)
+
+
+_LOG_TAU_MIN = -20.0
+_LOG_TAU_MAX = 20.0
+
+
+def _tau_from_log(log_tau) -> np.ndarray:
+    """Map an unbounded optimizer parameter to a strictly positive tau."""
+    return np.exp(np.clip(log_tau, _LOG_TAU_MIN, _LOG_TAU_MAX))
+
+
+def _exp_decay(t, a, log_tau, c):
+    tau = _tau_from_log(log_tau)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        return a * np.exp(-t / tau) + c
+
+
+def _bi_exp_decay(t, a1, log_tau1, a2, log_tau2, c):
+    tau1 = _tau_from_log(log_tau1)
+    tau2 = _tau_from_log(log_tau2)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        return a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2) + c
+
+
+def _tri_exp_decay(t, a1, log_tau1, a2, log_tau2, a3, log_tau3, c):
+    tau1 = _tau_from_log(log_tau1)
+    tau2 = _tau_from_log(log_tau2)
+    tau3 = _tau_from_log(log_tau3)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        return (a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2)
+                + a3 * np.exp(-t / tau3) + c)
+
+
+def _fit_decay(model, t, y, p0, maxfev):
+    """Run one log-tau decay fit and reject non-finite results.
+
+    Fitting ``log(tau)`` makes tau strictly positive by construction, so the
+    optimizer cannot drive it through zero into ``exp`` overflow. The log
+    parameter is clipped inside the model as a second guard. Results are also
+    checked for finite parameters and a finite residual cost, so a diverged
+    fit is reported as a failed fit rather than silently contributing
+    features.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            warnings.simplefilter("ignore", sp_optimize.OptimizeWarning)
+            popt, _ = sp_optimize.curve_fit(
+                model, t, y, p0=p0, maxfev=maxfev,
+            )
+        fitted = model(t, *popt)
+        if not np.all(np.isfinite(popt)) or not np.all(np.isfinite(fitted)):
+            return None
+        cost = float(np.sum((fitted - y) ** 2))
+        if not np.isfinite(cost):
+            return None
+        return popt, cost
+    except (RuntimeError, ValueError, FloatingPointError):
+        return None
 
 
 def compute_channel_device_agnostic(series, r0_samples=None, sr=10, r0=None):
@@ -321,48 +384,46 @@ def compute_multi_exp_decay(series, peak_idx=None, sr=10, n_components=2, r0=Non
     results = {"tau1": -1.0, "tau2": -1.0, "tau3": -1.0,
                "a1": -1.0, "a2": -1.0, "a3": -1.0, "cost": -1.0}
 
-    try:
-        popt, _ = sp_optimize.curve_fit(
-            _exp_decay, t, y,
-            p0=[a0, 3.0, 0],
-            maxfev=2000,
-        )
-        results["tau1"] = float(abs(popt[1]))
+    fit = _fit_decay(
+        _exp_decay, t, y,
+        [a0, np.log(3.0), 0.0],
+        2000,
+    )
+    if fit is not None:
+        popt, cost = fit
+        results["tau1"] = float(_tau_from_log(popt[1]))
         results["a1"] = float(popt[0])
-        results["cost"] = float(np.sum((_exp_decay(t, *popt) - y) ** 2))
-    except (RuntimeError, ValueError):
-        pass
+        results["cost"] = cost
 
-    try:
-        popt, _ = sp_optimize.curve_fit(
-            _bi_exp_decay, t, y,
-            p0=[a0 * 0.7, 2.0, a0 * 0.3, 10.0, 0],
-            maxfev=5000,
-        )
-        results["tau1"] = float(abs(popt[1]))
-        results["tau2"] = float(abs(popt[3]))
+    fit = _fit_decay(
+        _bi_exp_decay, t, y,
+        [a0 * 0.7, np.log(2.0), a0 * 0.3, np.log(10.0), 0.0],
+        5000,
+    )
+    if fit is not None:
+        popt, cost = fit
+        results["tau1"] = float(_tau_from_log(popt[1]))
+        results["tau2"] = float(_tau_from_log(popt[3]))
         results["a1"] = float(popt[0])
         results["a2"] = float(popt[2])
-        results["cost"] = float(np.sum((_bi_exp_decay(t, *popt) - y) ** 2))
-    except (RuntimeError, ValueError):
-        pass
+        results["cost"] = cost
 
     if n_components == 3 and len(recovery) >= 30:
-        try:
-            popt, _ = sp_optimize.curve_fit(
-                _tri_exp_decay, t, y,
-                p0=[a0 * 0.5, 1.5, a0 * 0.3, 5.0, a0 * 0.2, 20.0, 0],
-                maxfev=10000,
-            )
-            results["tau1"] = float(abs(popt[1]))
-            results["tau2"] = float(abs(popt[3]))
-            results["tau3"] = float(abs(popt[5]))
+        fit = _fit_decay(
+            _tri_exp_decay, t, y,
+            [a0 * 0.5, np.log(1.5), a0 * 0.3, np.log(5.0),
+             a0 * 0.2, np.log(20.0), 0.0],
+            10000,
+        )
+        if fit is not None:
+            popt, cost = fit
+            results["tau1"] = float(_tau_from_log(popt[1]))
+            results["tau2"] = float(_tau_from_log(popt[3]))
+            results["tau3"] = float(_tau_from_log(popt[5]))
             results["a1"] = float(popt[0])
             results["a2"] = float(popt[2])
             results["a3"] = float(popt[4])
-            results["cost"] = float(np.sum((_tri_exp_decay(t, *popt) - y) ** 2))
-        except (RuntimeError, ValueError):
-            pass
+            results["cost"] = cost
 
     return results
 

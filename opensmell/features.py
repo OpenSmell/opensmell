@@ -1,8 +1,14 @@
-"""Sensor-agnostic feature-extraction framework.
+"""Modality-dispatched feature extraction.
 
 The top-level `opensmell.features` routes by the sensor family declared in the
 manifest (`run_processor`) and re-exports the MOX framework-feature functions so
 existing callers of the pre-v3 layout keep working unchanged.
+
+Only MOX/chemiresistive feature extraction is implemented. MIRIS and
+electrochemical recordings are returned as raw normalized data by
+`run_processor`, and the legacy `extract_features`/`process` paths refuse them
+with `UnsupportedSensorTypeError` (see `opensmell.profile`). This module is
+channel-count agnostic, not modality agnostic.
 """
 
 from __future__ import annotations

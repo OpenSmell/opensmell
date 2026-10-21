@@ -24,10 +24,13 @@ from opensmell.calibration import (
     two_point_calibration,
 )
 from opensmell.constants import (
+    UnknownGasError,
     UnknownSensorError,
     all_power_laws,
     clean_air_ratio,
     is_power_law_sensor,
+    list_sensors,
+    normalize_sensor_name,
     power_law,
     sensor_gases,
     sensor_models,
@@ -149,7 +152,8 @@ def test_module_exports():
                  "invert_concentration", "loocv_power_law",
                  "build_calibration_payload", "concentration_series",
                  "calibrate_quick", "calibrate_precise",
-                 "CalibrationError"):
+                 "CalibrationError", "list_sensors", "sensor_gases",
+                 "UnknownSensorError", "UnknownGasError"):
         assert hasattr(opensmell, name), f"missing top-level export {name}"
 
 
@@ -161,6 +165,45 @@ def test_sensor_models_cover_common_mq():
     for m in ("MQ-2", "MQ-3", "MQ-4", "MQ-5", "MQ-6", "MQ-7", "MQ-8",
               "MQ-9", "MQ-135", "MQ-136", "MQ-131", "MQ-303A", "MQ-309A"):
         assert m in models, f"missing {m}"
+
+
+def test_list_sensors_is_public_and_matches_models():
+    assert opensmell.list_sensors() == sensor_models()
+    assert list_sensors() == sensor_models()
+    assert "MQ-135" in opensmell.list_sensors()
+
+
+def test_sensor_name_aliases_resolve_to_canonical_model():
+    for spelling in ("MQ-135", "MQ135", "mq135", "MQ_135", "MQ 135"):
+        assert normalize_sensor_name(spelling) == "MQ-135"
+    assert power_law("MQ135", "co") == power_law("MQ-135", "CO")
+    assert is_power_law_sensor("mq135") is True
+
+
+def test_unknown_sensor_error_lists_valid_options():
+    with pytest.raises(UnknownSensorError) as exc:
+        power_law("MQ-999", "CO")
+    message = str(exc.value)
+    assert "Unknown sensor" in message
+    assert "Known sensors" in message
+    assert "MQ-135" in message
+    # KeyError's default repr would add a second layer of quotes.
+    assert not message.startswith("'")
+
+
+def test_unknown_gas_error_lists_valid_options():
+    with pytest.raises(UnknownGasError) as exc:
+        power_law("MQ-135", "nonsense_gas")
+    message = str(exc.value)
+    assert "Known gases" in message
+    assert "CO" in message
+    assert isinstance(exc.value, KeyError)
+
+
+def test_relative_response_mems_error_is_explicit():
+    with pytest.raises(UnknownSensorError) as exc:
+        sensor_gases("SGP30")
+    assert "relative-response" in str(exc.value)
 
 
 def test_clean_air_ratio_present_and_positive():
@@ -195,7 +238,7 @@ def test_power_law_unknown_sensor():
 
 def test_power_law_unknown_gas_keyerror():
     assert "CO" in sensor_gases("MQ-135")
-    with pytest.raises(KeyError):
+    with pytest.raises(UnknownGasError):
         power_law("MQ-136", "nonsense_gas")
 
 
@@ -263,6 +306,21 @@ def test_calibrate_quick_from_datasheet():
     desc = CalibrationDescriptor.from_dict(d)
     assert desc.a == d["a"]
     assert desc.b == d["b"]
+
+
+def test_calibrate_quick_readme_examples_and_aliases():
+    # The README now uses a tabulated gas, and common sensor spellings work.
+    q = calibrate_quick("MQ-135", "Alcohol", reference_ppm=100)
+    assert q["ch0"]["referenceSubstance"] == "Alcohol"
+    assert q["ch0"]["referencePpm"] == 100.0
+
+    alias = calibrate_quick("MQ135", "c2h5oh", reference_ppm=100)
+    assert alias["ch0"]["referenceSubstance"] == "Alcohol"
+    assert alias["ch0"]["a"] == q["ch0"]["a"]
+    assert alias["ch0"]["b"] == q["ch0"]["b"]
+
+    lower = calibrate_quick("mq_135", "co", reference_ppm=50)
+    assert lower["ch0"]["referenceSubstance"] == "CO"
 
 
 def test_calibrate_quick_override():

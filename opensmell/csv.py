@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from statistics import median as _py_median
 from typing import List, Optional, Tuple
 
+from .constants import UnknownSensorError, normalize_sensor_name
 from .types import (
     CONTEXT_COLUMN_HINTS,
     DEFAULT_SYNTHETIC_RATE_HZ,
@@ -29,6 +30,25 @@ from .types import (
 )
 
 MOX_CHANNEL_IDS = ("VOC", "Alcohol", "LPG", "CO", "NO2", "C2H5OH")
+
+# Conservative header hints for families whose feature/quality backends are not
+# implemented yet. They only fire when no model name or MOX target column is
+# present, so a normal chemiresistive array is never reclassified by accident.
+_OPTICAL_HINTS = (
+    "wavelength", "absorbance", "spectrum", "spectral", "ftir", "ndir",
+)
+_ELECTROCHEMICAL_HINTS = (
+    "potentiostat", "amperometric", "workingelectrode",
+    "counterelectrode", "referenceelectrode",
+)
+
+
+def _header_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def _has_header_hint(header: List[str], hints: Tuple[str, ...]) -> bool:
+    return any(hint in _header_key(h) for h in header for hint in hints)
 
 
 @dataclass
@@ -343,6 +363,30 @@ def _safe_float(raw: str) -> Optional[float]:
 
 
 def guess_sensor_type(header: List[str]) -> str:
-    """Guess the sensor family from CSV column names (web guessSensorType)."""
-    hits = [h for h in header if h in MOX_CHANNEL_IDS]
-    return "mox" if len(hits) >= 2 else "unknown"
+    """Guess the sensor family from CSV column names (web guessSensorType).
+
+    Model names win first (``MQ135``, ``SGP30``, ``TGS8100``, ``BME680`` are
+    chemiresistive/MOX). A header with a canonical MOX target column and no
+    optical/electrochemical hint is also MOX. Otherwise conservative header
+    hints identify MIRIS/optical and electrochemical recordings so the SDK can
+    report an explicit unsupported family instead of silently applying MOX
+    feature math. Anything ambiguous stays ``"unknown"`` and uses the
+    MOX-compatible signal framework.
+    """
+    for column in header:
+        try:
+            normalize_sensor_name(column)
+        except UnknownSensorError:
+            continue
+        return "mox"
+
+    has_mox_target = any(h in MOX_CHANNEL_IDS for h in header)
+    has_optical = _has_header_hint(header, _OPTICAL_HINTS)
+    has_electrochemical = _has_header_hint(header, _ELECTROCHEMICAL_HINTS)
+    if has_mox_target and not (has_optical or has_electrochemical):
+        return "mox"
+    if has_optical:
+        return "miris"
+    if has_electrochemical:
+        return "electrochemical"
+    return "unknown"

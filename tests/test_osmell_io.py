@@ -176,3 +176,11 @@ def test_csv_from_file_and_naming():
 def test_guess_sensor_type():
     assert o.guess_sensor_type(["timestamp_ms", "VOC", "Alcohol", "CO"]) == "mox"
     assert o.guess_sensor_type(["timestamp_ms", "onlyone"]) == "unknown"
+    assert o.guess_sensor_type(["timestamp_ms", "MQ135", "MQ3"]) == "mox"
+    assert o.guess_sensor_type(["timestamp_ms", "SGP30", "BME680"]) == "mox"
+    assert o.guess_sensor_type(
+        ["timestamp_ms", "wavelength_600", "wavelength_700"]
+    ) == "miris"
+    assert o.guess_sensor_type(
+        ["timestamp_ms", "working_electrode_ua", "reference_electrode_mv"]
+    ) == "electrochemical"

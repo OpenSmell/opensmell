@@ -1,9 +1,9 @@
-"""Sensor-agnostic quality-scoring framework.
+"""Modality-dispatched quality scoring.
 
-The top-level `opensmell.quality` dispatches by sensor family declared in the
-manifest to the sensor-specific implementation (e.g. `opensmell.mox.quality`).
-Sensor families without a registered scorer raise `NotImplementedError` so the
-framework contract stays explicit.
+The top-level `opensmell.quality` dispatches by the sensor family declared in the
+manifest to the sensor-specific implementation (`opensmell.mox.quality`).
+Unknown arrays use the device-agnostic MOX scorer; MIRIS and electrochemical
+raise `NotImplementedError` so the framework contract stays explicit.
 """
 
 from __future__ import annotations

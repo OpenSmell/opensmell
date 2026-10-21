@@ -5,6 +5,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
+
 import opensmell as o
 from opensmell.ingest import build_osmell_file
 
@@ -97,8 +99,8 @@ def test_build_osmell_file_role_and_provenance(tmp_path):
     assert f.manifest.sensor.time_column == "timestamp_ms"
 
 
-def test_mq_array_adopted_with_unknown_sensor_type(tmp_path):
-    """An MQ-series array isn't a MOX set but must still be adopted and scored."""
+def test_mq_array_adopted_with_recognized_models(tmp_path):
+    """MQ-series headers resolve to MOX models and are adopted and scored."""
     p = tmp_path / "mq.csv"
     p.write_text(
         "timestamp_ms,MQ135,MQ3,MQ6,MQ7,MQ4,MQ8\n"
@@ -109,10 +111,30 @@ def test_mq_array_adopted_with_unknown_sensor_type(tmp_path):
     )
     session = o.ingest_file(p)
     assert session.ok, session.error
-    assert session.sensor_type == "unknown"
+    assert session.sensor_type == "mox"
     assert session.time_source == "column"
     assert session.report is not None
     assert session.report.total is not None
     assert [c.id for c in session.file.manifest.sensor.channels] == [
         "MQ135", "MQ3", "MQ6", "MQ7", "MQ4", "MQ8",
     ]
+
+
+def test_miris_csv_adopted_without_quality_score(tmp_path):
+    """An unsupported family is kept; only its feature/quality path is refused."""
+    p = tmp_path / "miris.csv"
+    p.write_text(
+        "timestamp_ms,wavelength_600,wavelength_700\n"
+        "0,1.0,2.0\n"
+        "100,1.1,2.1\n"
+        "200,1.2,2.2\n"
+    )
+    session = o.ingest_file(p)
+    assert session.ok, session.error
+    assert session.sensor_type == "miris"
+    assert session.file is not None
+    assert session.report is None
+    assert any("No quality scorer" in w for w in session.warnings)
+    assert o.inspect_source(session).feature_family == "unsupported"
+    with pytest.raises(o.UnsupportedSensorTypeError):
+        o.extract_features(session)
